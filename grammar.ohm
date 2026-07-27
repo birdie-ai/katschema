@@ -1,0 +1,165 @@
+Katschema {
+  Start = Value
+
+  Value =
+  	Schema
+    | JSON
+    
+  JSON =
+    Object
+    | Array
+    | String
+    | Number
+    | True
+    | False
+    | Null
+
+  Schema = 
+  	"(" Type  ("," Clause)* ")"
+
+  Type =
+    Ref
+    | Value
+    
+  Clause =
+    Keyvalue
+    | Expr
+    
+  Tag = 
+  	Ident
+    
+  Keyvalue =
+  	Ident "=" JSON
+    
+  Expr =
+  	UnaryExpr
+  	| BinExpr
+    | Funcall
+	| JSON
+    | Ref
+    
+  BinExpr = 
+  	Expr BinOP JSON
+    
+  UnaryExpr =
+  	UnaryOP Expr
+    
+  Funcall =
+  	Ref "(" Args ")"
+    
+  Args =
+  	Expr ("," Args)*
+  
+  UnaryOP =
+  	"!"
+    
+  BinOP = 
+  	"=="
+    | "!="
+    | "~"
+    | "<"
+    | "<="
+    | ">"
+    | ">="
+    | "in"
+  
+  Ident = 
+  	ident
+    
+  Ref
+    = (".")? ident ("." ident)*
+
+  ident
+    = identStart identPart*
+    
+  identStart
+    = letter
+    | "_"
+
+  identPart
+    = identStart
+    | digit
+    
+  keyword
+    = "true"
+    | "false"
+    | "null"
+    | "in"
+    
+  Object =
+    "{" "}" -- empty
+    | "{" Pair ("," Pair)* "}" -- nonEmpty
+
+  Pair =
+    String ":" Value
+
+  Array =
+    "[" "]" -- empty
+    | "[" Value ("," Value)* "]" -- nonEmpty
+
+  String (String) =
+    stringLiteral
+
+  stringLiteral =
+    "\"" doubleStringCharacter* "\""
+
+  doubleStringCharacter (character) =
+    ~("\"" | "\\") any -- nonEscaped
+    | "\\" escapeSequence -- escaped
+
+  escapeSequence =
+    "\"" -- doubleQuote
+    | "\\" -- reverseSolidus
+    | "/" -- solidus
+    | "b" -- backspace
+    | "f" -- formfeed
+    | "n" -- newline
+    | "r" -- carriageReturn
+    | "t" -- horizontalTab
+    | "u" fourHexDigits -- codePoint
+
+  fourHexDigits = hexDigit hexDigit hexDigit hexDigit
+
+  Number (Number) =
+    numberLiteral
+
+  numberLiteral =
+    decimal exponent -- withExponent
+    | decimal -- withoutExponent
+
+  decimal =
+    wholeNumber "." digit+ -- withFract
+    | wholeNumber -- withoutFract
+
+  wholeNumber =
+    "-" unsignedWholeNumber -- negative
+    | unsignedWholeNumber -- nonNegative
+
+  unsignedWholeNumber =
+    "0" -- zero
+    | nonZeroDigit digit* -- nonZero
+
+  nonZeroDigit = "1".."9"
+
+  exponent =
+    exponentMark ("+"|"-") digit+ -- signed
+    | exponentMark digit+ -- unsigned
+
+  exponentMark = "e" | "E"
+
+  True = "true"
+  False = "false"
+  Null = "null"
+  
+  space += comment
+
+  comment
+    = lineComment
+    | blockComment
+
+  lineComment
+    = "//" (~"\n" any)* ("\n" | end)
+
+  blockComment
+    = "/*" (~"*/" any)* "*/"
+}
