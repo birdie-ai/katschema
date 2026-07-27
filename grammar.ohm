@@ -6,14 +6,20 @@ Katschema {
     | JSON
     
   JSON =
+  	Collection
+    | Primitive
+    
+  Collection =
     Object
     | Array
-    | String
+    
+  Primitive =
+    String
     | Number
     | True
     | False
     | Null
-
+    
   Schema = 
   	"(" Type  ("," Clause)* ")" ("|" Schema)*
 
@@ -22,43 +28,90 @@ Katschema {
     | Value
     
   Clause =
-    Keyvalue
-    | Expr
+    LogicalExpr
+    | Funcall
+    | Keyvalue
+    | Tag
+    
+  Tag =
+  	Ident
     
   Keyvalue =
-  	Ident "=" JSON
+  	Ident Assign JSON
     
-  Expr =
-  	UnaryExpr
-  	| BinExpr
-    | Funcall
-    | JSON
-    | Ref
+  Assign =
+  	"="
+    
+  LogicalExpr =
+  	(ChainedRangeExpr | BinExpr | UnaryExpr) (LogicalOP LogicalExpr)*
+    
+  XRef = "x"
+  
+  ValueExpr =
+  	SingleValueExpr
+    | WrappedValueExpr
     
   BinExpr = 
-  	Expr BinOP JSON
+  	ValueExpr BinaryPredicate ValueExpr
     
   UnaryExpr =
-  	UnaryOP Expr
+  	UnaryPredicate (ValueExpr | LogicalExpr)
+    
+  ChainedRangeExpr =
+  	Primitive Range SingleValueExpr Range Primitive
+    
+  SingleValueExpr =
+  	ArithExpr
+  	| Funcall
+    | XRef
+    | JSON
+    | WrappedValueExpr
+    
+  WrappedValueExpr =
+  	"(" ValueExpr ")"
+    
+  ArithExpr =
+  	ValueExpr ArithOP ValueExpr
     
   Funcall =
   	Ref "(" Args ")"
     
   Args =
-  	Expr ("," Args)*
+  	ValueExpr ("," Args)*
+    
+  LogicalOP = 
+  	"&&"
+   	| "||"
+    
+  ArithOP =
+  	"+"
+    | "-"
+    | "%"
   
-  UnaryOP =
+  UnaryPredicate  =
   	"!"
     
-  BinOP = 
-  	"=="
-    | "!="
-    | "~"
-    | "<"
-    | "<="
-    | ">"
-    | ">="
+  BinaryPredicate = 
+  	Eq
+    | Ineq
+    | Range
+    | Match
     | "in"
+    
+  Eq =
+  	"=="
+  
+  Ineq = 
+  	"!="
+    
+  Match = 
+  	"~"
+    
+  Range = 
+  	"<="
+    | ">="
+    | "<"
+    | ">"
   
   Ident = 
   	ident
@@ -90,10 +143,13 @@ Katschema {
   Pair =
     String ":" Value
 
+  // NOTE(i4k): the grammar below allows for multiple surplus comma.
+  // I fixed this but it complicates too much so better keep it simple here and enforce only a single surplus comma
+  // in the recursive descent parser.
   Array =
-    "[" "]" -- empty
-    | "[" Value ("," Value)* "]" -- nonEmpty
-
+  	"[" Value ("," Value*)* "]" -- nonEmpty
+    | "[" "]" -- empty
+  
   String (String) =
     stringLiteral
 

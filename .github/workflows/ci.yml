@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  grammar-validation:
+    name: Validate Ohm Grammar Examples
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: 'grammar/package.json'
+          cache: npm
+
+      - name: Install validator dependencies
+        run: cd grammar && npm ci
+
+      - name: Validate examples
+        run: make check/grammar
