@@ -15,7 +15,7 @@ Katschema {
     | Null
 
   Schema = 
-  	"(" Type  ("," Clause)* ")"
+  	"(" Type  ("," Clause)* ")" ("|" Schema)*
 
   Type =
     Ref
@@ -32,7 +32,7 @@ Katschema {
   	UnaryExpr
   	| BinExpr
     | Funcall
-	| JSON
+    | JSON
     | Ref
     
   BinExpr = 
