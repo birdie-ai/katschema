@@ -10,7 +10,6 @@ jobs:
   grammar-validation:
     name: Validate Ohm Grammar Examples
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v7
