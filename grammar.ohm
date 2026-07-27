@@ -29,7 +29,6 @@ Katschema {
     
   Clause =
     LogicalExpr
-    | Funcall
     | Keyvalue
     | Tag
     
@@ -43,7 +42,7 @@ Katschema {
   	"="
     
   LogicalExpr =
-  	(ChainedRangeExpr | BinExpr | UnaryExpr) (LogicalOP LogicalExpr)*
+  	(ChainedRangeExpr | BinExpr | UnaryExpr | Funcall) (LogicalOP LogicalExpr)*
     
   XRef = "x"
   
