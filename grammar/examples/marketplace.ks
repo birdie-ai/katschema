@@ -343,17 +343,13 @@
 	// Returns a list of products.
     "GET /products": {
       "response": [
-        (
-          .types.product
-        )
+        (.types.product)
       ]
     },
 
 	// Returns a product by id.
     "GET /products/:id": {
-      "response": (
-        .types.product
-      )
+      "response": (.types.product)
     },
 
 	// Create an order.
@@ -364,7 +360,6 @@
           string,
           uuid(x)
         ),
-
         "items": [
           {
             "product_id": (
@@ -383,16 +378,11 @@
           optional
         )
       },
-
-      "response": (
-        .types.order
-      )
+      "response": (.types.order)
     },
 
     "GET /orders/:id": {
-      "response": (
-        .types.order
-      )
+      "response": (.types.order)
     }
   }
 }
