@@ -191,11 +191,11 @@ Example:
 Constraints are boolean expressions evaluated against the value being validated.
 Within a constraint expression, the identifier `x` refers to the current value.
 
-Constraints may use comparison, function and logical operators.
+Constraints may use arithmetic, comparison, function and logical operators.
 
 #### Operators
 
-Comparison:
+Predicates:
 
 * `==`
 * `!=`
@@ -206,11 +206,18 @@ Comparison:
 * `in`
 * `~`
 
-Logical:
+Logical operators:
 
 * `&&`
 * `||`
 * `!`
+
+Arithmetic operators:
+
+* `+`
+* `-`
+* `/`
+* `%`
 
 For example:
 
@@ -219,11 +226,15 @@ For example:
 ```
 
 ```ksc
-(int, x >= 18, optional)
+(int, x+1 >= 18, optional)
 ```
 
 ```ksc
 (float, x >= 0 && x <= 1)
+```
+
+```ksc
+(int, x % 2 == 0)
 ```
 
 Snippet above is the same as:
