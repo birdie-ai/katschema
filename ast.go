@@ -3,40 +3,44 @@ package katschema
 import (
 	"cmp"
 	"encoding"
+	"fmt"
 )
+
+// The AST **must**:
+// - be pleasant to use (by hand)
+// - be unambiguous (AST <-> TEXT)
+// - be extensible
 
 type (
 	// Type is a Katschema type.
-	// The only constraint is that it should be marshaled as a valid katschema construct.
 	Type interface {
-		Value
-	}
+		Check(Value) error
 
-	Value interface {
 		encoding.TextMarshaler
 		encoding.TextAppender
+
+		fmt.Stringer
 	}
 
-	// Typed value.
-	Typed struct {
-		Type  Schema
-		Value Value
+	// Value is a typed value.
+	Value struct {
+		Type  Type
+		Value any
 	}
 
 	Ref string
 
 	Schema struct {
-		Type Type
+		Ref  Ref
+		Impl Type
 		// TODO(i4k): constraints
 	}
 
-	// Null exist only to make katschema a superset of JSON, which means all JSON values are
-	// valid Katschema values.
-	Null struct{}
-
 	Object[T cmp.Ordered] struct {
-		Fields map[T]Type
+		Fields map[T]Schema
 	}
+
+	Tuple []Schema
 
 	List struct {
 		Items Schema
@@ -48,32 +52,33 @@ type (
 )
 
 var (
-	Bool   = Schema{Type: Ref("bool")}
-	Int    = Schema{Type: Ref("int")}
-	Float  = Schema{Type: Ref("float")}
-	String = Schema{Type: Ref("string")}
+	Null   = Schema{Ref: Ref("null")}
+	Bool   = Schema{Ref: Ref("bool")}
+	Int    = Schema{Ref: Ref("int")}
+	Float  = Schema{Ref: Ref("float")}
+	String = Schema{Ref: Ref("string")}
 
-	True  = Typed{Type: Bool, Value: Primitive{Value: true}}
-	False = Typed{Type: Bool, Value: Primitive{Value: false}}
-
-	_ []Type = []Type{
-		Ref(""),
-		Null{},
-		Object[string]{},
-		Schema{},
-		Typed{},
-	}
+	True  = New(Bool, true)
+	False = New(Bool, false)
 )
 
-func New(t Schema, v any) Typed {
-	return Typed{
-		Type:  t,
-		Value: Primitive{Value: v},
-	}
-}
+func (r Ref) String() string      { b, _ := r.MarshalText(); return string(b) }
+func (r Ref) Check(_ Value) error { return nil }
 
-func New2(t Schema, v Value) Typed {
-	return Typed{
+func (s Schema) String() string      { b, _ := s.MarshalText(); return string(b) }
+func (s Schema) Check(_ Value) error { return nil }
+
+func (l List) String() string      { b, _ := l.MarshalText(); return string(b) }
+func (l List) Check(_ Value) error { return nil }
+
+func (t Tuple) String() string      { b, _ := t.MarshalText(); return string(b) }
+func (t Tuple) Check(_ Value) error { return nil }
+
+func (o Object[T]) String() string      { b, _ := o.MarshalText(); return string(b) }
+func (o Object[T]) Check(_ Value) error { return nil }
+
+func New(t Type, v any) Value {
+	return Value{
 		Type:  t,
 		Value: v,
 	}

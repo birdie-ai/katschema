@@ -2,6 +2,8 @@ package katschema
 
 import (
 	"bytes"
+	"encoding"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -9,19 +11,166 @@ import (
 	"strconv"
 )
 
+var (
+	ErrValueType      = errors.New(`value has invalid type`)
+	ErrTypeUnresolved = errors.New(`unresolved type`)
+)
+
 func (v Ref) AppendText(b []byte) ([]byte, error) { return append(b, string(v)...), nil }
 func (v Ref) MarshalText() ([]byte, error)        { return v.AppendText([]byte{}) }
 
-func (v Typed) AppendText(b []byte) ([]byte, error) { return v.Value.AppendText(b) }
-func (v Typed) MarshalText() ([]byte, error)        { return v.AppendText([]byte{}) }
+func (v Value) AppendText(b []byte) ([]byte, error) {
+	// All Go primitive correctly encode to Katschema values.
+	// Any algebraic type needs to implement the encoding interfaces.
 
-func (v Null) AppendText(b []byte) ([]byte, error) { return append(b, 'n', 'u', 'l', 'l'), nil }
-func (v Null) MarshalText() ([]byte, error)        { return v.AppendText([]byte{}) }
+	if marshaler, ok := v.Value.(encoding.TextAppender); ok {
+		return marshaler.AppendText(b)
+	}
+	if marshaler, ok := v.Value.(encoding.TextMarshaler); ok {
+		data, err := marshaler.MarshalText()
+		if err != nil {
+			return nil, err
+		}
+		return append(b, data...), nil
+	}
+
+	switch tt := v.Type.(type) {
+	default:
+		panic(v.Type)
+	case Schema:
+		switch tt.Ref {
+		case "null":
+			b = append(b, 'n', 'u', 'l', 'l')
+		case "int", "float", "bool":
+			b = append(b, fmt.Sprint(v.Value)...)
+		case "string":
+			str, ok := v.Value.(string)
+			if !ok {
+				return nil, fmt.Errorf(`%w: value %v is incompatible with type %s`, ErrValueType, v.Value, v.Type)
+			}
+			b = append(b, strconv.Quote(str)...)
+		default:
+			// custom type
+			if tt.Impl == nil {
+				return nil, fmt.Errorf(`%w: type %q`, ErrTypeUnresolved, tt.Ref)
+			}
+			newval := Value{
+				Type:  tt.Impl,
+				Value: v.Value,
+			}
+			return newval.AppendText(b)
+		}
+	case List:
+		b = append(b, '[')
+
+		vv, ok := v.Value.([]Value)
+		if !ok {
+			var err error
+			// needs to be converted to katschema AST values
+			vv, err = toValues(v.Value)
+			if err != nil {
+				return nil, err
+			}
+		}
+		for i, item := range vv {
+			if i > 0 {
+				b = append(b, ',')
+			}
+			vitem := Value{
+				Type:  tt.Items,
+				Value: item,
+			}
+			var err error
+			b, err = vitem.AppendText(b)
+			if err != nil {
+				return nil, err
+			}
+		}
+		b = append(b, ']')
+	case Object[string]:
+		b = append(b, '{')
+		if v.Value != nil {
+			vv, ok := v.Value.([]Value)
+			if !ok {
+				panic("not yet")
+			}
+			for i, vvv := range vv {
+				if i > 0 {
+					b = append(b, ',')
+				}
+				tt, ok := vvv.Type.(Tuple)
+				if !ok {
+					panic("not yet")
+				}
+				if len(tt) != 2 {
+					panic("TODO")
+				}
+				if tt[0].Ref != "string" {
+					panic("TODO")
+				}
+				vals, err := toValues(vvv.Value)
+				if err != nil {
+					return nil, err
+				}
+				b, err = New(String, vals[0]).AppendText(b)
+				if err != nil {
+					return nil, err
+				}
+				b = append(b, ':')
+				b, err = vals[1].AppendText(b)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		b = append(b, '}')
+	case Object[int]:
+		b = append(b, '{')
+		if v.Value != nil {
+			vv, ok := v.Value.([]Value)
+			if !ok {
+				panic("not yet")
+			}
+			for i, vvv := range vv {
+				if i > 0 {
+					b = append(b, ',')
+				}
+				tt, ok := vvv.Type.(Tuple)
+				if !ok {
+					panic("not yet")
+				}
+				if len(tt) != 2 {
+					panic("TODO")
+				}
+				if tt[0].Ref != "int" {
+					panic("unexpected")
+				}
+				vals, err := toValues(vvv.Value)
+				if err != nil {
+					return nil, err
+				}
+				b, err = New(Int, vals[0]).AppendText(b)
+				if err != nil {
+					return nil, err
+				}
+				b = append(b, ':')
+				b, err = vals[1].AppendText(b)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		b = append(b, '}')
+	}
+	return b, nil
+}
+
+func (v Value) MarshalText() ([]byte, error) { return v.AppendText([]byte{}) }
 
 func (v Schema) AppendText(b []byte) ([]byte, error) {
 	b = append(b, '(')
 	var err error
-	b, err = v.Type.AppendText(b)
+	b, err = v.Ref.AppendText(b)
 	if err != nil {
 		return nil, err
 	}
@@ -33,15 +182,35 @@ func (v Schema) MarshalText() ([]byte, error) {
 	return v.AppendText([]byte{})
 }
 
-func (v List) AppendText(b []byte) ([]byte, error) {
-	switch v.Items.Type {
-	case String:
-		return append(b, `[(string)]`...), nil
-	case Int:
-		return append(b, `[(int)]`...), nil
-	default:
-		panic("unreachable")
+func (t Tuple) AppendText(b []byte) ([]byte, error) {
+	b = append(b, '[')
+	for i, v := range t {
+		if i > 0 {
+			b = append(b, ',')
+		}
+		var err error
+		b, err = v.AppendText(b)
+		if err != nil {
+			return nil, err
+		}
 	}
+	b = append(b, ']')
+	return b, nil
+}
+
+func (t Tuple) MarshalText() ([]byte, error) {
+	return t.AppendText([]byte{})
+}
+
+func (v List) AppendText(b []byte) ([]byte, error) {
+	b = append(b, '[')
+	var err error
+	b, err = v.Items.AppendText(b)
+	if err != nil {
+		return nil, err
+	}
+	b = append(b, ']')
+	return b, nil
 }
 
 func (v List) MarshalText() ([]byte, error) {
@@ -60,7 +229,7 @@ func (o Object[T]) AppendText(b []byte) ([]byte, error) {
 		case string:
 			write(buf, quote(kk))
 		case int:
-			write(buf, quote(strconv.Itoa(kk)))
+			write(buf, strconv.Itoa(kk))
 		default:
 			panic("unimplemented")
 		}
@@ -87,6 +256,90 @@ func (v Primitive) MarshalText() ([]byte, error) { return v.AppendText([]byte{})
 
 func (o Object[T]) MarshalText() ([]byte, error) {
 	return o.AppendText([]byte{})
+}
+
+func toValue(a any) (Value, error) {
+	switch vv := a.(type) {
+	default:
+		panic("not yet")
+	case Value:
+		return vv, nil
+	case bool:
+		return Value{
+			Type:  Bool,
+			Value: vv,
+		}, nil
+	case int:
+		return Value{
+			Type:  Int,
+			Value: vv,
+		}, nil
+	case float64:
+		return Value{
+			Type:  Float,
+			Value: vv,
+		}, nil
+	case string:
+		return Value{
+			Type:  String,
+			Value: vv,
+		}, nil
+	}
+}
+
+func toValues(a any) ([]Value, error) {
+	var err error
+	switch vv := a.(type) {
+	case []Value:
+		return vv, nil
+	case []bool:
+		vals := make([]Value, len(vv))
+		for i := range vv {
+			vals[i], err = toValue(vv[i])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return vals, nil
+	case []int:
+		vals := make([]Value, len(vv))
+		for i := range vv {
+			vals[i], err = toValue(vv[i])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return vals, nil
+	case []float64:
+		vals := make([]Value, len(vv))
+		for i := range vv {
+			vals[i], err = toValue(vv[i])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return vals, nil
+	case []string:
+		vals := make([]Value, len(vv))
+		for i := range vv {
+			vals[i], err = toValue(vv[i])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return vals, nil
+	case []any:
+		vals := make([]Value, len(vv))
+		for i := range vv {
+			vals[i], err = toValue(vv[i])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return vals, nil
+	default:
+		return nil, fmt.Errorf(`%w: value %v (%T) cannot be encoded`, ErrValueType, a, a)
+	}
 }
 
 func write(w io.Writer, p string) {
