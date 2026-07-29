@@ -62,7 +62,6 @@ func (v Value) AppendText(b []byte) ([]byte, error) {
 		}
 	case List:
 		b = append(b, '[')
-
 		vv, ok := v.Value.([]Value)
 		if !ok {
 			var err error
@@ -248,32 +247,18 @@ func (o Object[T]) MarshalText() ([]byte, error) {
 }
 
 func toValue(a any) (Value, error) {
-	switch vv := a.(type) {
-	default:
-		panic("not yet")
-	case Value:
-		return vv, nil
-	case bool:
-		return Value{
-			Type:  Bool,
-			Value: vv,
-		}, nil
-	case int:
-		return Value{
-			Type:  Int,
-			Value: vv,
-		}, nil
-	case float64:
-		return Value{
-			Type:  Float,
-			Value: vv,
-		}, nil
-	case string:
-		return Value{
-			Type:  String,
-			Value: vv,
-		}, nil
+	if v, ok := a.(Value); ok {
+		return v, nil
 	}
+	typ, err := typeof(a)
+	if err != nil {
+		return Value{}, err
+	}
+	return Value{
+		Type:  typ,
+		Value: a,
+	}, nil
+
 }
 
 func toValues(a any) ([]Value, error) {
@@ -341,6 +326,21 @@ func toValues(a any) ([]Value, error) {
 			}
 			vals[i] = New(Tuple{String, valtyp}, []Value{
 				New(String, k),
+				New(valtyp, val),
+			})
+		}
+		return vals, nil
+	case map[int]any:
+		keys := slices.Sorted(maps.Keys(vv))
+		vals := make([]Value, len(keys))
+		for i, k := range keys {
+			val := vv[k]
+			valtyp, err := typeof(val)
+			if err != nil {
+				return nil, err
+			}
+			vals[i] = New(Tuple{Int, valtyp}, []Value{
+				New(Int, k),
 				New(valtyp, val),
 			})
 		}
