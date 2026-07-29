@@ -23,11 +23,20 @@ func TestMarshaler(t *testing.T) {
 		err    error
 	}
 
-	books := ks.Object[string]{
+	book := ks.Object[string]{
 		Fields: ks.Fields[string]{
 			{Key: "id", Typ: ks.String},
 			{Key: "title", Typ: ks.String},
 			{Key: "author", Typ: ks.String},
+		},
+	}
+
+	books := ks.List{Items: book}
+
+	user := ks.Object[string]{
+		Fields: ks.Fields[string]{
+			{Key: "login", Typ: ks.String},
+			{Key: "books", Typ: books},
 		},
 	}
 
@@ -138,8 +147,42 @@ func TestMarshaler(t *testing.T) {
 			},
 		},
 		{
-			name: "simple object set using tuples - keep order",
+			name: "simple object set  using Go map - lose order",
+			input: ks.New(book, map[string]any{
+				"id":     "some-id",
+				"title":  "Principia Mathematica",
+				"author": "Isaac Newton",
+			}),
+			output: encoded{
+				val: `{"author":"Isaac Newton","id":"some-id","title":"Principia Mathematica"}`,
+				typ: `{"id":(string),"title":(string),"author":(string)}`,
+			},
+		},
+		{
+			name: "array of objects",
 			input: ks.New(books, []ks.Value{
+				ks.New(book, map[string]any{
+					"id":     "some-other",
+					"title":  "Elements",
+					"author": "Euclid",
+				}),
+				ks.New(book, map[string]any{
+					"id":     "some-id",
+					"title":  "Principia Mathematica",
+					"author": "Isaac Newton",
+				}),
+			},
+			),
+			output: encoded{
+				val: `[{"author":"Euclid","id":"some-other","title":"Elements"},{"author":"Isaac Newton","id":"some-id","title":"Principia Mathematica"}]`,
+				typ: `[{"id":(string),"title":(string),"author":(string)}]`,
+			},
+		},
+		{
+			// below is the lower-level AST that's generated when it's
+			// decoded using the parser (rather than manually constructed).
+			name: "simple object set using tuples - keep order",
+			input: ks.New(book, []ks.Value{
 				ks.New(ks.Tuple{ks.String, ks.String}, []ks.Value{
 					ks.New(ks.String, "id"),
 					ks.New(ks.String, "some-id"),
@@ -158,19 +201,6 @@ func TestMarshaler(t *testing.T) {
 				typ: `{"id":(string),"title":(string),"author":(string)}`,
 			},
 		},
-		{
-			name: "simple object set  using Go map - lose order",
-			input: ks.New(books, map[string]any{
-				"id":     "some-id",
-				"title":  "Principia Mathematica",
-				"author": "Isaac Newton",
-			}),
-			output: encoded{
-				val: `{"author":"Isaac Newton","id":"some-id","title":"Principia Mathematica"}`,
-				typ: `{"id":(string),"title":(string),"author":(string)}`,
-			},
-		},
-
 		{
 			name: "object string->value",
 			input: ks.New(ks.Object[string]{
@@ -238,6 +268,23 @@ func TestMarshaler(t *testing.T) {
 			output: encoded{
 				val: `{"a":"some value","b":10}`,
 				typ: `(sometype)`,
+			},
+		},
+		{
+			name: "nested object",
+			input: ks.New(user, map[string]any{
+				"login": "i4k",
+				"books": ks.New(books, []ks.Value{
+					ks.New(book, map[string]any{
+						"id":     "some-id",
+						"title":  "The Winter King",
+						"author": "Bernard Cornwell",
+					}),
+				}),
+			}),
+			output: encoded{
+				val: `{"books":[{"author":"Bernard Cornwell","id":"some-id","title":"The Winter King"}],"login":"i4k"}`,
+				typ: `{"login":(string),"books":[{"id":(string),"title":(string),"author":(string)}]}`,
 			},
 		},
 	} {

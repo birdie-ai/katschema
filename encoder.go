@@ -104,7 +104,7 @@ func (v Value) AppendText(b []byte) ([]byte, error) {
 				if len(tt) != 2 {
 					panic("TODO")
 				}
-				if tt[0].Ref != "string" {
+				if sc, ok := tt[0].(Schema); !ok || sc.Ref != "string" {
 					panic("TODO")
 				}
 				vals, err := toValues(vvv.Value)
@@ -141,7 +141,7 @@ func (v Value) AppendText(b []byte) ([]byte, error) {
 				if len(tt) != 2 {
 					panic("TODO")
 				}
-				if tt[0].Ref != "int" {
+				if sc, ok := tt[0].(Schema); !ok || sc.Ref != "int" {
 					panic("unexpected")
 				}
 				vals, err := toValues(vvv.Value)
@@ -350,8 +350,8 @@ func toValues(a any) ([]Value, error) {
 	}
 }
 
-func typeof(a any) (Schema, error) {
-	switch a.(type) {
+func typeof(a any) (Type, error) {
+	switch v := a.(type) {
 	case bool:
 		return Bool, nil
 	case int, int8, int16, int32, int64:
@@ -362,6 +362,8 @@ func typeof(a any) (Schema, error) {
 		return String, nil
 	case nil:
 		return Null, nil
+	case Value:
+		return v.Type, nil
 	default:
 		panic("not yet")
 	}

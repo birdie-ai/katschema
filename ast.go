@@ -42,15 +42,15 @@ type (
 
 	Field[T cmp.Ordered] struct {
 		Key T
-		Typ Schema
+		Typ Type
 	}
 
 	Fields[T cmp.Ordered] []Field[T]
 
-	Tuple []Schema
+	Tuple []Type
 
 	List struct {
-		Items Schema
+		Items Type
 	}
 )
 
