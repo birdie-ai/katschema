@@ -85,6 +85,8 @@ Katschema {
   ArithOP =
   	"+"
     | "-"
+	| "*"
+	| "/"
     | "%"
   
   UnaryPredicate  =

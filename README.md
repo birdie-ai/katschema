@@ -216,6 +216,7 @@ Arithmetic operators:
 
 * `+`
 * `-`
+* `*`
 * `/`
 * `%`
 
