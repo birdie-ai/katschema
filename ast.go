@@ -37,17 +37,20 @@ type (
 	}
 
 	Object[T cmp.Ordered] struct {
-		Fields map[T]Schema
+		Fields Fields[T]
 	}
+
+	Field[T cmp.Ordered] struct {
+		Key T
+		Typ Schema
+	}
+
+	Fields[T cmp.Ordered] []Field[T]
 
 	Tuple []Schema
 
 	List struct {
 		Items Schema
-	}
-
-	Primitive struct {
-		Value any
 	}
 )
 

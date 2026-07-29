@@ -8,23 +8,30 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-type encoded struct {
-	val string
-	typ string
-}
-
-type encodertc struct {
-	name   string
-	input  ks.Value
-	output encoded
-
-	err error
-}
-
 func TestMarshaler(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range []encodertc{
+	type encoded struct {
+		val string
+		typ string
+	}
+
+	type testcase struct {
+		name   string
+		input  ks.Value
+		output encoded
+		err    error
+	}
+
+	books := ks.Object[string]{
+		Fields: ks.Fields[string]{
+			{Key: "id", Typ: ks.String},
+			{Key: "title", Typ: ks.String},
+			{Key: "author", Typ: ks.String},
+		},
+	}
+
+	for _, tc := range []testcase{
 		{
 			name:  "null",
 			input: ks.New(ks.Null, nil),
@@ -131,11 +138,45 @@ func TestMarshaler(t *testing.T) {
 			},
 		},
 		{
+			name: "simple object set using tuples - keep order",
+			input: ks.New(books, []ks.Value{
+				ks.New(ks.Tuple{ks.String, ks.String}, []ks.Value{
+					ks.New(ks.String, "id"),
+					ks.New(ks.String, "some-id"),
+				}),
+				ks.New(ks.Tuple{ks.String, ks.String}, []ks.Value{
+					ks.New(ks.String, "title"),
+					ks.New(ks.String, "Principia Mathematica"),
+				}),
+				ks.New(ks.Tuple{ks.String, ks.String}, []ks.Value{
+					ks.New(ks.String, "author"),
+					ks.New(ks.String, "Isaac Newton"),
+				}),
+			}),
+			output: encoded{
+				val: `{"id":"some-id","title":"Principia Mathematica","author":"Isaac Newton"}`,
+				typ: `{"id":(string),"title":(string),"author":(string)}`,
+			},
+		},
+		{
+			name: "simple object set  using Go map - lose order",
+			input: ks.New(books, map[string]any{
+				"id":     "some-id",
+				"title":  "Principia Mathematica",
+				"author": "Isaac Newton",
+			}),
+			output: encoded{
+				val: `{"author":"Isaac Newton","id":"some-id","title":"Principia Mathematica"}`,
+				typ: `{"id":(string),"title":(string),"author":(string)}`,
+			},
+		},
+
+		{
 			name: "object string->value",
 			input: ks.New(ks.Object[string]{
-				Fields: map[string]ks.Schema{
-					"a": ks.String,
-					"b": ks.Int,
+				Fields: ks.Fields[string]{
+					{Key: "a", Typ: ks.String},
+					{Key: "b", Typ: ks.Int},
 				},
 			}, []ks.Value{
 				ks.New(ks.Tuple{ks.String, ks.String}, []ks.Value{
@@ -155,9 +196,9 @@ func TestMarshaler(t *testing.T) {
 		{
 			name: "object int fields -> value",
 			input: ks.New(ks.Object[int]{
-				Fields: map[int]ks.Schema{
-					1: ks.String,
-					2: ks.Int,
+				Fields: ks.Fields[int]{
+					{Key: 1, Typ: ks.String},
+					{Key: 2, Typ: ks.Int},
 				},
 			}, []ks.Value{
 				ks.New(ks.Tuple{ks.Int, ks.String}, []ks.Value{
@@ -179,9 +220,9 @@ func TestMarshaler(t *testing.T) {
 			input: ks.New(ks.Schema{
 				Ref: ks.Ref("sometype"),
 				Impl: ks.Object[string]{
-					Fields: map[string]ks.Schema{
-						"a": ks.String,
-						"b": ks.Int,
+					Fields: ks.Fields[string]{
+						{Key: "a", Typ: ks.String},
+						{Key: "a", Typ: ks.Int},
 					},
 				},
 			}, []ks.Value{

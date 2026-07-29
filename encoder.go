@@ -90,9 +90,9 @@ func (v Value) AppendText(b []byte) ([]byte, error) {
 	case Object[string]:
 		b = append(b, '{')
 		if v.Value != nil {
-			vv, ok := v.Value.([]Value)
-			if !ok {
-				panic("not yet")
+			vv, err := toValues(v.Value)
+			if err != nil {
+				panic(err)
 			}
 			for i, vvv := range vv {
 				if i > 0 {
@@ -219,13 +219,12 @@ func (v List) MarshalText() ([]byte, error) {
 
 func (o Object[T]) AppendText(b []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(b)
-	keys := slices.Sorted(maps.Keys(o.Fields))
 	write(buf, "{")
-	for i, k := range keys {
+	for i, field := range o.Fields {
 		if i > 0 {
 			write(buf, ",")
 		}
-		switch kk := any(k).(type) {
+		switch kk := any(field.Key).(type) {
 		case string:
 			write(buf, quote(kk))
 		case int:
@@ -234,7 +233,7 @@ func (o Object[T]) AppendText(b []byte) ([]byte, error) {
 			panic("unimplemented")
 		}
 		write(buf, ":")
-		vtext, err := o.Fields[k].MarshalText()
+		vtext, err := field.Typ.MarshalText()
 		if err != nil {
 			return nil, err
 		}
@@ -243,16 +242,6 @@ func (o Object[T]) AppendText(b []byte) ([]byte, error) {
 	write(buf, "}")
 	return buf.Bytes(), nil
 }
-
-func (v Primitive) AppendText(b []byte) ([]byte, error) {
-	switch v.Value.(type) {
-	case string:
-		return append(b, strconv.Quote(fmt.Sprint(v.Value))...), nil
-	default:
-		return append(b, fmt.Sprint(v.Value)...), nil
-	}
-}
-func (v Primitive) MarshalText() ([]byte, error) { return v.AppendText([]byte{}) }
 
 func (o Object[T]) MarshalText() ([]byte, error) {
 	return o.AppendText([]byte{})
@@ -337,8 +326,44 @@ func toValues(a any) ([]Value, error) {
 			}
 		}
 		return vals, nil
+
+	// below are helper map values converted for convenience when setting up
+	// objects from Go maps. This shall never be reached when encoding an AST
+	// created by the parser.
+	case map[string]any:
+		keys := slices.Sorted(maps.Keys(vv))
+		vals := make([]Value, len(keys))
+		for i, k := range keys {
+			val := vv[k]
+			valtyp, err := typeof(val)
+			if err != nil {
+				return nil, err
+			}
+			vals[i] = New(Tuple{String, valtyp}, []Value{
+				New(String, k),
+				New(valtyp, val),
+			})
+		}
+		return vals, nil
 	default:
 		return nil, fmt.Errorf(`%w: value %v (%T) cannot be encoded`, ErrValueType, a, a)
+	}
+}
+
+func typeof(a any) (Schema, error) {
+	switch a.(type) {
+	case bool:
+		return Bool, nil
+	case int, int8, int16, int32, int64:
+		return Int, nil
+	case float32, float64:
+		return Float, nil
+	case string:
+		return String, nil
+	case nil:
+		return Null, nil
+	default:
+		panic("not yet")
 	}
 }
 
