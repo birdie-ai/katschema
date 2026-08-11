@@ -304,7 +304,7 @@ is the same as:
 ```
 
 ```ksc
-(string, endsWith(x, ".png")
+(string, endsWith(x, ".png"))
 ```
 
 ```ksc
