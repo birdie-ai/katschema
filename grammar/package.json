@@ -1,0 +1,10 @@
+{
+  "name": "grammar-check",
+  "private": true,
+  "engines": {
+    "node": ">=20 <21"
+  },
+  "dependencies": {
+    "ohm-js": "17.5.0"
+  }
+}

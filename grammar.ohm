@@ -1,0 +1,219 @@
+Katschema {
+  Start = Value
+
+  Value =
+  	Schema
+    | JSON
+    
+  JSON =
+  	Collection
+    | Primitive
+    
+  Collection =
+    Object
+    | Array
+    
+  Primitive =
+    String
+    | Number
+    | True
+    | False
+    | Null
+    
+  Schema = 
+  	"(" Type  ("," Clause)* ")" ("|" Schema)*
+
+  Type =
+    Ref
+    | Value
+    
+  Clause =
+    LogicalExpr
+    | Keyvalue
+    | Tag
+    
+  Tag =
+  	Ident
+    
+  Keyvalue =
+  	Ident Assign JSON
+    
+  Assign =
+  	"="
+    
+  LogicalExpr =
+  	(ChainedRangeExpr | BinExpr | UnaryExpr | Funcall) (LogicalOP LogicalExpr)*
+    
+  XRef = "x"
+  
+  ValueExpr =
+  	SingleValueExpr
+    | WrappedValueExpr
+    
+  BinExpr = 
+  	ValueExpr BinaryPredicate ValueExpr
+    
+  UnaryExpr =
+  	UnaryPredicate (ValueExpr | LogicalExpr)
+    
+  ChainedRangeExpr =
+  	Primitive Range SingleValueExpr Range Primitive
+    
+  SingleValueExpr =
+  	ArithExpr
+  	| Funcall
+    | XRef
+    | JSON
+    | WrappedValueExpr
+    
+  WrappedValueExpr =
+  	"(" ValueExpr ")"
+    
+  ArithExpr =
+  	ValueExpr ArithOP ValueExpr
+    
+  Funcall =
+  	Ref "(" Args ")"
+    
+  Args =
+  	ValueExpr ("," Args)*
+    
+  LogicalOP = 
+  	"&&"
+   	| "||"
+    
+  ArithOP =
+  	"+"
+    | "-"
+	| "*"
+	| "/"
+    | "%"
+  
+  UnaryPredicate  =
+  	"!"
+    
+  BinaryPredicate = 
+  	Eq
+    | Ineq
+    | Range
+    | Match
+    | "in"
+    
+  Eq =
+  	"=="
+  
+  Ineq = 
+  	"!="
+    
+  Match = 
+  	"~"
+    
+  Range = 
+  	"<="
+    | ">="
+    | "<"
+    | ">"
+  
+  Ident = 
+  	ident
+    
+  Ref
+    = (".")? ident ("." ident)*
+
+  ident
+    = identStart identPart*
+    
+  identStart
+    = letter
+    | "_"
+
+  identPart
+    = identStart
+    | digit
+    
+  keyword
+    = "true"
+    | "false"
+    | "null"
+    | "in"
+    
+  Object =
+    "{" "}" -- empty
+    | "{" Pair ("," Pair)* "}" -- nonEmpty
+
+  Pair =
+    String ":" Value
+
+  // NOTE(i4k): the grammar below allows for multiple surplus comma.
+  // I fixed this but it complicates too much so better keep it simple here and enforce only a single surplus comma
+  // in the recursive descent parser.
+  Array =
+  	"[" Value ("," Value*)* "]" -- nonEmpty
+    | "[" "]" -- empty
+  
+  String (String) =
+    stringLiteral
+
+  stringLiteral =
+    "\"" doubleStringCharacter* "\""
+
+  doubleStringCharacter (character) =
+    ~("\"" | "\\") any -- nonEscaped
+    | "\\" escapeSequence -- escaped
+
+  escapeSequence =
+    "\"" -- doubleQuote
+    | "\\" -- reverseSolidus
+    | "/" -- solidus
+    | "b" -- backspace
+    | "f" -- formfeed
+    | "n" -- newline
+    | "r" -- carriageReturn
+    | "t" -- horizontalTab
+    | "u" fourHexDigits -- codePoint
+
+  fourHexDigits = hexDigit hexDigit hexDigit hexDigit
+
+  Number (Number) =
+    numberLiteral
+
+  numberLiteral =
+    decimal exponent -- withExponent
+    | decimal -- withoutExponent
+
+  decimal =
+    wholeNumber "." digit+ -- withFract
+    | wholeNumber -- withoutFract
+
+  wholeNumber =
+    "-" unsignedWholeNumber -- negative
+    | unsignedWholeNumber -- nonNegative
+
+  unsignedWholeNumber =
+    "0" -- zero
+    | nonZeroDigit digit* -- nonZero
+
+  nonZeroDigit = "1".."9"
+
+  exponent =
+    exponentMark ("+"|"-") digit+ -- signed
+    | exponentMark digit+ -- unsigned
+
+  exponentMark = "e" | "E"
+
+  True = "true"
+  False = "false"
+  Null = "null"
+  
+  space += comment
+
+  comment
+    = lineComment
+    | blockComment
+
+  lineComment
+    = "//" (~"\n" any)* ("\n" | end)
+
+  blockComment
+    = "/*" (~"*/" any)* "*/"
+}
