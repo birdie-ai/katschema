@@ -162,7 +162,52 @@ func TestPrint(t *testing.T) {
 			want: `({})`,
 		},
 		{
-			name: "schema int constraint",
+			name: "schema int binary constraint (x == 67)",
+			root: func(a *Tree) NodeID {
+				return a.AddSchema(a.AddName("int", z),
+					[]NodeID{a.AddConstraint(
+						a.AddBinary(
+							a.AddIdent("x", z),
+							token.Eq,
+							a.AddInt("67", z),
+							z,
+						), z)},
+					z)
+			},
+			want: `(int,x==67)`,
+		},
+		{
+			name: "schema int binary constraint (x != 67)",
+			root: func(a *Tree) NodeID {
+				return a.AddSchema(a.AddName("int", z),
+					[]NodeID{a.AddConstraint(
+						a.AddBinary(
+							a.AddIdent("x", z),
+							token.Ne,
+							a.AddInt("67", z),
+							z,
+						), z)},
+					z)
+			},
+			want: `(int,x!=67)`,
+		},
+		{
+			name: "schema int binary constraint (x < 69)",
+			root: func(a *Tree) NodeID {
+				return a.AddSchema(a.AddName("int", z),
+					[]NodeID{a.AddConstraint(
+						a.AddBinary(
+							a.AddIdent("x", z),
+							token.Lt,
+							a.AddInt("69", z),
+							z,
+						), z)},
+					z)
+			},
+			want: `(int,x<69)`,
+		},
+		{
+			name: "schema int binary constraint (0 <= x <= 1337)",
 			root: func(a *Tree) NodeID {
 				return a.AddSchema(a.AddName("int", z),
 					[]NodeID{a.AddConstraint(a.AddBinary(
@@ -173,12 +218,42 @@ func TestPrint(t *testing.T) {
 							z,
 						),
 						token.Le,
-						a.AddInt("100", z),
+						a.AddInt("1337", z),
 						z,
 					), z)},
 					z)
 			},
-			want: `(int,0<=x<=100)`,
+			want: `(int,0<=x<=1337)`,
+		},
+		{
+			name: "schema int binary constraint (x IN [0, 1])",
+			root: func(a *Tree) NodeID {
+				return a.AddSchema(a.AddName("int", z),
+					[]NodeID{a.AddConstraint(
+						a.AddBinary(
+							a.AddIdent("x", z),
+							token.In,
+							a.AddList([]NodeID{a.AddInt("0", z), a.AddInt("1", z)}, z),
+							z,
+						), z)},
+					z)
+			},
+			want: `(int,x in [0,1])`,
+		},
+		{
+			name: "schema string binary constraint (x ~ \"[a-z]+\")",
+			root: func(a *Tree) NodeID {
+				return a.AddSchema(a.AddName("string", z),
+					[]NodeID{a.AddConstraint(
+						a.AddBinary(
+							a.AddIdent("x", z),
+							token.Match,
+							a.AddString("[a-z]+", z),
+							z,
+						), z)},
+					z)
+			},
+			want: `(string,x~"[a-z]+")`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
