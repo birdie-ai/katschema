@@ -274,7 +274,7 @@ func (t *Tree) Array(id NodeID) []NodeID {
 	return refs(t.refs, t.arrays[n.data])
 }
 
-func (t *Tree) NewField(span, nameSpan token.Span, name string, value NodeID) Field {
+func (t *Tree) NewField(name string, value NodeID, span, nameSpan token.Span) Field {
 	return Field{
 		Span:     span,
 		NameSpan: nameSpan,

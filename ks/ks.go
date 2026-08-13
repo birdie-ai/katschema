@@ -144,6 +144,9 @@ func Ref(parts ...string) Value {
 	}
 }
 
+// Literals have Lit* prefix because I decided to favor the Null(), Bool(), Int(), etc to the
+// type constructors.
+
 func LitNull() Value {
 	return Value{kind: valueNull}
 }
@@ -152,7 +155,7 @@ func LitBool(v bool) Value {
 	return Value{kind: valueBool, b: v}
 }
 
-// LitNumber keeps the number spelling exactly as supplied.
+// LitNumber is the source number as-is.
 func LitNumber(raw string) Value {
 	return Value{kind: valueNumber, text: raw}
 }
@@ -161,7 +164,7 @@ func LitString(v string) Value {
 	return Value{kind: valueString, text: v}
 }
 
-func Array(elems ...Value) Value {
+func List(elems ...Value) Value {
 	return Value{kind: valueArray, elems: clone(elems)}
 }
 
@@ -241,8 +244,8 @@ func NullExpr() Expr {
 	return ValueExpr(LitNull())
 }
 
-func List(v ...Value) Expr {
-	return ValueExpr(Array(v...))
+func ListExpr(v ...Value) Expr {
+	return ValueExpr(List(v...))
 }
 
 func Call(name string, args ...Expr) Expr {
@@ -315,7 +318,7 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 			if err != nil {
 				return 0, err
 			}
-			fields[i] = t.NewField(z, z, v.fields[i].name, id)
+			fields[i] = t.NewField(v.fields[i].name, id, z, z)
 		}
 		return t.AddObject(fields, z), nil
 	case valueSchema:

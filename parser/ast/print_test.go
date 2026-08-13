@@ -105,14 +105,8 @@ func TestPrint(t *testing.T) {
 					{
 						Name: a.AddText("obj"),
 						Value: a.AddObject([]Field{
-							{
-								Name:  a.AddText("str"),
-								Value: a.AddString("test", z),
-							},
-							{
-								Name:  a.AddText("int"),
-								Value: a.AddInt("1337", z),
-							},
+							a.NewField("str", a.AddString("test", z), z, z),
+							a.NewField("int", a.AddInt("1337", z), z, z),
 						}, z),
 					},
 				}, z)
