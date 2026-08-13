@@ -131,7 +131,7 @@ func (p *printer) node(id NodeID) {
 			return
 		}
 		p.node(b.Left)
-		if b.Op == token.IN {
+		if b.Op == token.In {
 			p.write(" in ")
 		} else {
 			p.write(b.Op.String())

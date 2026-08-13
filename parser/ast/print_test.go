@@ -168,11 +168,11 @@ func TestPrint(t *testing.T) {
 					[]NodeID{a.AddConstraint(a.AddBinary(
 						a.AddBinary(
 							a.AddInt("0", z),
-							token.LE,
+							token.Le,
 							a.AddIdent("x", z),
 							z,
 						),
-						token.LE,
+						token.Le,
 						a.AddInt("100", z),
 						z,
 					), z)},
@@ -202,9 +202,9 @@ func TestPAddFloattExplicit(t *testing.T) {
 	one := tree.AddFloat("1", z)
 	two := tree.AddFloat("2", z)
 
-	add := tree.AddBinary(x, token.ADD, one, z)
+	add := tree.AddBinary(x, token.Add, one, z)
 	group := tree.AddGroup(z, add)
-	mul := tree.AddBinary(group, token.MUL, two, z)
+	mul := tree.AddBinary(group, token.Mul, two, z)
 
 	var b bytes.Buffer
 	if err := Print(&b, tree, mul); err != nil {

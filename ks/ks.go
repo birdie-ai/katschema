@@ -98,22 +98,22 @@ type Expr struct {
 type Op = token.Kind
 
 const (
-	Eq    = token.EQ
-	Ne    = token.NE
-	Lt    = token.LT
-	Le    = token.LE
-	Gt    = token.GT
-	Ge    = token.GE
-	In    = token.IN
-	Match = token.MATCH
-	And   = token.AND
-	Or    = token.OR
-	Not   = token.NOT
-	Add   = token.ADD
-	Sub   = token.SUB
-	Mul   = token.MUL
-	Div   = token.QUO
-	Mod   = token.REM
+	Eq    = token.Eq
+	Ne    = token.Ne
+	Lt    = token.Lt
+	Le    = token.Le
+	Gt    = token.Gt
+	Ge    = token.Ge
+	In    = token.In
+	Match = token.Match
+	And   = token.And
+	Or    = token.Or
+	Not   = token.Not
+	Add   = token.Add
+	Sub   = token.Sub
+	Mul   = token.Mul
+	Div   = token.Div
+	Mod   = token.Mod
 )
 
 func Any() Value    { return Type("any") }

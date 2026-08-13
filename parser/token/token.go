@@ -37,132 +37,132 @@ func (s Span) Valid() bool {
 	return s.Start != NoPos && s.End != NoPos && s.Start <= s.End
 }
 
-// Kind is a lexical token.
+// Kind of the lexical token.
 type Kind uint8
 
 const (
-	ILLEGAL Kind = iota
+	Illegal Kind = iota
 	EOF
 
-	IDENT
-	NUMBER
-	STRING
+	Ident
+	Number
+	String
 
-	NULL
-	TRUE
-	FALSE
-	IN
+	Null
+	True
+	False
+	In
 
-	LPAREN
-	RPAREN
-	LBRACK
-	RBRACK
-	LBRACE
-	RBRACE
-	COMMA
-	COLON
-	DOT
+	LParen // (
+	RParen // )
+	LBrack // [
+	RBrack // ]
+	LBrace // {
+	RBrace // }
+	Comma  // ,
+	Colon  // :
+	Dot    // .
 
-	ASSIGN // =
-	EQ     // ==
-	NE     // !=
-	LT     // <
-	LE     // <=
-	GT     // >
-	GE     // >=
-	MATCH  // ~
+	Assign // =
+	Eq     // ==
+	Ne     // !=
+	Lt     // <
+	Le     // <=
+	Gt     // >
+	Ge     // >=
+	Match  // ~
 
-	AND // &&
-	OR  // ||
-	NOT // !
+	And // &&
+	Or  // ||
+	Not // !
 
-	ADD // +
-	SUB // -
-	MUL // *
-	QUO // /
-	REM // %
+	Add // +
+	Sub // -
+	Mul // *
+	Div // /
+	Mod // %
 )
 
 func (k Kind) String() string {
 	switch k {
 	case EOF:
 		return "EOF"
-	case IDENT:
+	case Ident:
 		return "identifier"
-	case NUMBER:
+	case Number:
 		return "number"
-	case STRING:
+	case String:
 		return "string"
-	case NULL:
+	case Null:
 		return "null"
-	case TRUE:
+	case True:
 		return "true"
-	case FALSE:
+	case False:
 		return "false"
-	case IN:
+	case In:
 		return "in"
-	case LPAREN:
+	case LParen:
 		return "("
-	case RPAREN:
+	case RParen:
 		return ")"
-	case LBRACK:
+	case LBrack:
 		return "["
-	case RBRACK:
+	case RBrack:
 		return "]"
-	case LBRACE:
+	case LBrace:
 		return "{"
-	case RBRACE:
+	case RBrace:
 		return "}"
-	case COMMA:
+	case Comma:
 		return ","
-	case COLON:
+	case Colon:
 		return ":"
-	case DOT:
+	case Dot:
 		return "."
-	case ASSIGN:
+	case Assign:
 		return "="
-	case EQ:
+	case Eq:
 		return "=="
-	case NE:
+	case Ne:
 		return "!="
-	case LT:
+	case Lt:
 		return "<"
-	case LE:
+	case Le:
 		return "<="
-	case GT:
+	case Gt:
 		return ">"
-	case GE:
+	case Ge:
 		return ">="
-	case MATCH:
+	case Match:
 		return "~"
-	case AND:
+	case And:
 		return "&&"
-	case OR:
+	case Or:
 		return "||"
-	case NOT:
+	case Not:
 		return "!"
-	case ADD:
+	case Add:
 		return "+"
-	case SUB:
+	case Sub:
 		return "-"
-	case MUL:
+	case Mul:
 		return "*"
-	case QUO:
+	case Div:
 		return "/"
-	case REM:
+	case Mod:
 		return "%"
 	}
 	return "ILLEGAL"
 }
 
 func (k Kind) IsUnary() bool {
-	return k == NOT || k == ADD || k == SUB
+	return k == Not || k == Add || k == Sub
 }
 
 func (k Kind) IsBinary() bool {
 	switch k {
-	case EQ, NE, LT, LE, GT, GE, IN, MATCH,
-		AND, OR, ADD, SUB, MUL, QUO, REM:
+	case Eq, Ne, Lt, Le, Gt, Ge, In, Match,
+		And, Or, Add, Sub, Mul, Div, Mod:
 		return true
 	}
 	return false
