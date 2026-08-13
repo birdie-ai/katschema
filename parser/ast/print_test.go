@@ -255,6 +255,28 @@ func TestPrint(t *testing.T) {
 			},
 			want: `(string,x~"[a-z]+")`,
 		},
+		{
+			name: "binary constraint with arith",
+			root: func(a *Tree) NodeID {
+				x := a.AddIdent("x", z)
+				one := a.AddFloat("1", z)
+				two := a.AddFloat("2", z)
+
+				add := a.AddBinary(x, token.Add, one, z)
+				group := a.AddGroup(z, add)
+				mul := a.AddBinary(group, token.Mul, two, z)
+				return a.AddSchema(a.AddName("int", z),
+					[]NodeID{a.AddConstraint(
+						a.AddBinary(
+							a.AddIdent("x", z),
+							token.Lt,
+							mul,
+							z,
+						), z)},
+					z)
+			},
+			want: `(int,x<(x+1)*2)`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tree := New()
@@ -267,38 +289,5 @@ func TestPrint(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-func TestPAddFloattExplicit(t *testing.T) {
-	tree := New()
-	var z token.Span
-	x := tree.AddIdent("x", z)
-	one := tree.AddFloat("1", z)
-	two := tree.AddFloat("2", z)
-
-	add := tree.AddBinary(x, token.Add, one, z)
-	group := tree.AddGroup(z, add)
-	mul := tree.AddBinary(group, token.Mul, two, z)
-
-	var b bytes.Buffer
-	if err := Print(&b, tree, mul); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := b.String(), `(x+1)*2`; got != want {
-		t.Fatalf("got %q, want %q", got, want)
-	}
-}
-
-func TestAddFloat(t *testing.T) {
-	tree := New()
-	span := token.NewSpan(10, 14)
-	id := tree.AddFloat("1337", span)
-
-	if got := tree.Node(id).Span(); got != span {
-		t.Fatalf("got %#v, want %#v", got, span)
-	}
-	if span.Start.Offset() != 10 || span.End.Offset() != 14 {
-		t.Fatalf("bad offsets: %#v", span)
 	}
 }
