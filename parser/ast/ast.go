@@ -1,0 +1,517 @@
+// Package ast defines Katschema's source syntax tree.
+//
+// A Tree is arena-backed. Nodes refer to one another by NodeID and carry
+// source spans.
+package ast
+
+import "github.com/birdie-ai/katschema/parser/token"
+
+type (
+	NodeID uint32
+	TextID uint32
+
+	Kind uint8
+
+	// Node is an AST node.
+	// The data field interpretation depends on the kind but in most cases it's an index
+	// into the arena for the specific kind.
+	Node struct {
+		kind Kind
+		span token.Span
+		data uint32
+	}
+
+	PathPart struct {
+		Span token.Span
+		Name TextID
+	}
+
+	SchemaData struct {
+		Type    NodeID
+		Clauses []NodeID
+	}
+
+	AttrData struct {
+		NameSpan token.Span
+		Name     TextID
+		Value    NodeID
+		HasValue bool
+	}
+
+	FncallData struct {
+		FuncSpan token.Span
+		Func     TextID
+		Args     []NodeID
+	}
+
+	UnaryData struct {
+		Op token.Kind
+		X  NodeID
+	}
+
+	BinaryData struct {
+		Left  NodeID
+		Op    token.Kind
+		Right NodeID
+	}
+
+	Field struct {
+		Name     TextID
+		Value    NodeID
+		Span     token.Span
+		NameSpan token.Span
+	}
+
+	sliceRefs struct {
+		off uint32
+		len uint32
+	}
+
+	schemaData struct {
+		typ     NodeID
+		clauses sliceRefs
+	}
+
+	callData struct {
+		funcSpan token.Span
+		fn       TextID
+		args     sliceRefs
+	}
+
+	Tree struct {
+		nodes []Node
+		texts []string
+
+		refs []NodeID
+
+		arrays  []sliceRefs
+		objects []sliceRefs
+		fields  []Field
+
+		paths     []sliceRefs
+		pathParts []PathPart
+
+		schemas  []schemaData
+		attrs    []AttrData
+		calls    []callData
+		unaries  []UnaryData
+		binaries []BinaryData
+	}
+)
+
+const (
+	Invalid Kind = iota
+
+	Null
+	Bool
+	Int
+	Float
+	String
+	List
+	Object
+	Schema
+
+	Name
+	Path
+
+	Constraint
+	Attr
+
+	Ident
+	Call
+	Unary
+	Binary
+	Group
+)
+
+func (n Node) Kind() Kind       { return n.kind }
+func (n Node) Span() token.Span { return n.span }
+
+func New() *Tree {
+	t := new(Tree)
+	t.init()
+	return t
+}
+
+func (t *Tree) init() {
+	if len(t.nodes) == 0 {
+		t.nodes = append(t.nodes, Node{})
+	}
+	if len(t.texts) == 0 {
+		t.texts = append(t.texts, "")
+	}
+}
+
+// Reset keeps allocated storage and clears the tree.
+func (t *Tree) Reset() {
+	if len(t.nodes) == 0 {
+		t.nodes = append(t.nodes, Node{})
+	} else {
+		t.nodes = t.nodes[:1]
+	}
+	if len(t.texts) == 0 {
+		t.texts = append(t.texts, "")
+	} else {
+		t.texts = t.texts[:1]
+	}
+	t.refs = t.refs[:0]
+	t.arrays = t.arrays[:0]
+	t.objects = t.objects[:0]
+	t.fields = t.fields[:0]
+	t.paths = t.paths[:0]
+	t.pathParts = t.pathParts[:0]
+	t.schemas = t.schemas[:0]
+	t.attrs = t.attrs[:0]
+	t.calls = t.calls[:0]
+	t.unaries = t.unaries[:0]
+	t.binaries = t.binaries[:0]
+}
+
+func (t *Tree) Node(id NodeID) Node {
+	if id == 0 || int(id) >= len(t.nodes) {
+		return Node{}
+	}
+	return t.nodes[id]
+}
+
+func (t *Tree) Text(id TextID) string {
+	if id == 0 || int(id) >= len(t.texts) {
+		return ""
+	}
+	return t.texts[id]
+}
+
+func (t *Tree) AddText(s string) TextID {
+	t.init()
+	id := TextID(len(t.texts))
+	t.texts = append(t.texts, s)
+	return id
+}
+
+func (t *Tree) addNode(k Kind, span token.Span, data uint32) NodeID {
+	t.init()
+	id := NodeID(len(t.nodes))
+	t.nodes = append(t.nodes, Node{kind: k, span: span, data: data})
+	return id
+}
+
+func (t *Tree) appendRefs(v []NodeID) sliceRefs {
+	r := sliceRefs{off: uint32(len(t.refs)), len: uint32(len(v))}
+	t.refs = append(t.refs, v...)
+	return r
+}
+
+func refs[T any](v []T, r sliceRefs) []T {
+	return v[r.off : r.off+r.len]
+}
+
+func (t *Tree) AddNull(span token.Span) NodeID {
+	return t.addNode(Null, span, 0)
+}
+
+func (t *Tree) AddBool(v bool, span token.Span) NodeID {
+	var data uint32
+	if v {
+		data = 1
+	}
+	return t.addNode(Bool, span, data)
+}
+
+func (t *Tree) Bool(id NodeID) bool {
+	n := t.Node(id)
+	return n.kind == Bool && n.data != 0
+}
+
+func (t *Tree) AddInt(raw string, span token.Span) NodeID {
+	return t.addNode(Int, span, uint32(t.AddText(raw)))
+}
+
+func (t *Tree) AddFloat(raw string, span token.Span) NodeID {
+	return t.addNode(Float, span, uint32(t.AddText(raw)))
+}
+
+func (t *Tree) Int(id NodeID) string {
+	n := t.Node(id)
+	if n.kind != Int {
+		return ""
+	}
+	return t.Text(TextID(n.data))
+}
+
+func (t *Tree) Float(id NodeID) string {
+	n := t.Node(id)
+	if n.kind != Float {
+		return ""
+	}
+	return t.Text(TextID(n.data))
+}
+
+func (t *Tree) AddString(v string, span token.Span) NodeID {
+	return t.addNode(String, span, uint32(t.AddText(v)))
+}
+
+func (t *Tree) String(id NodeID) string {
+	n := t.Node(id)
+	if n.kind != String {
+		return ""
+	}
+	return t.Text(TextID(n.data))
+}
+
+func (t *Tree) AddList(elems []NodeID, span token.Span) NodeID {
+	r := t.appendRefs(elems)
+	i := uint32(len(t.arrays))
+	t.arrays = append(t.arrays, r)
+	return t.addNode(List, span, i)
+}
+
+func (t *Tree) Array(id NodeID) []NodeID {
+	n := t.Node(id)
+	if n.kind != List || int(n.data) >= len(t.arrays) {
+		return nil
+	}
+	return refs(t.refs, t.arrays[n.data])
+}
+
+func (t *Tree) NewField(span, nameSpan token.Span, name string, value NodeID) Field {
+	return Field{
+		Span:     span,
+		NameSpan: nameSpan,
+		Name:     t.AddText(name),
+		Value:    value,
+	}
+}
+
+func (t *Tree) AddObject(fields []Field, span token.Span) NodeID {
+	r := sliceRefs{off: uint32(len(t.fields)), len: uint32(len(fields))}
+	t.fields = append(t.fields, fields...)
+	i := uint32(len(t.objects))
+	t.objects = append(t.objects, r)
+	return t.addNode(Object, span, i)
+}
+
+func (t *Tree) Object(id NodeID) []Field {
+	n := t.Node(id)
+	if n.kind != Object || int(n.data) >= len(t.objects) {
+		return nil
+	}
+	return refs(t.fields, t.objects[n.data])
+}
+
+func (t *Tree) AddName(name string, span token.Span) NodeID {
+	return t.addNode(Name, span, uint32(t.AddText(name)))
+}
+
+func (t *Tree) Name(id NodeID) string {
+	n := t.Node(id)
+	if n.kind != Name {
+		return ""
+	}
+	return t.Text(TextID(n.data))
+}
+
+func (t *Tree) NewPathPart(span token.Span, name string) PathPart {
+	return PathPart{Span: span, Name: t.AddText(name)}
+}
+
+func (t *Tree) AddPath(span token.Span, parts []PathPart) NodeID {
+	r := sliceRefs{off: uint32(len(t.pathParts)), len: uint32(len(parts))}
+	t.pathParts = append(t.pathParts, parts...)
+	i := uint32(len(t.paths))
+	t.paths = append(t.paths, r)
+	return t.addNode(Path, span, i)
+}
+
+func (t *Tree) Path(id NodeID) []PathPart {
+	n := t.Node(id)
+	if n.kind != Path || int(n.data) >= len(t.paths) {
+		return nil
+	}
+	return refs(t.pathParts, t.paths[n.data])
+}
+
+func (t *Tree) AddSchema(typ NodeID, clauses []NodeID, span token.Span) NodeID {
+	i := uint32(len(t.schemas))
+	t.schemas = append(t.schemas, schemaData{typ: typ, clauses: t.appendRefs(clauses)})
+	return t.addNode(Schema, span, i)
+}
+
+func (t *Tree) Schema(id NodeID) SchemaData {
+	n := t.Node(id)
+	if n.kind != Schema || int(n.data) >= len(t.schemas) {
+		return SchemaData{}
+	}
+	d := t.schemas[n.data]
+	return SchemaData{Type: d.typ, Clauses: refs(t.refs, d.clauses)}
+}
+
+func (t *Tree) AddConstraint(expr NodeID, span token.Span) NodeID {
+	return t.addNode(Constraint, span, uint32(expr))
+}
+
+func (t *Tree) Constraint(id NodeID) NodeID {
+	n := t.Node(id)
+	if n.kind != Constraint {
+		return 0
+	}
+	return NodeID(n.data)
+}
+
+func (t *Tree) AddAttr(span, nameSpan token.Span, name string, value NodeID, hasValue bool) NodeID {
+	i := uint32(len(t.attrs))
+	t.attrs = append(t.attrs, AttrData{
+		NameSpan: nameSpan,
+		Name:     t.AddText(name),
+		Value:    value,
+		HasValue: hasValue,
+	})
+	return t.addNode(Attr, span, i)
+}
+
+func (t *Tree) Attr(id NodeID) AttrData {
+	n := t.Node(id)
+	if n.kind != Attr || int(n.data) >= len(t.attrs) {
+		return AttrData{}
+	}
+	return t.attrs[n.data]
+}
+
+func (t *Tree) AddIdent(name string, span token.Span) NodeID {
+	return t.addNode(Ident, span, uint32(t.AddText(name)))
+}
+
+func (t *Tree) Ident(id NodeID) string {
+	n := t.Node(id)
+	if n.kind != Ident {
+		return ""
+	}
+	return t.Text(TextID(n.data))
+}
+
+func (t *Tree) AddCall(span, funcSpan token.Span, fn string, args []NodeID) NodeID {
+	i := uint32(len(t.calls))
+	t.calls = append(t.calls, callData{
+		funcSpan: funcSpan,
+		fn:       t.AddText(fn),
+		args:     t.appendRefs(args),
+	})
+	return t.addNode(Call, span, i)
+}
+
+func (t *Tree) Fncall(id NodeID) FncallData {
+	n := t.Node(id)
+	if n.kind != Call || int(n.data) >= len(t.calls) {
+		return FncallData{}
+	}
+	d := t.calls[n.data]
+	return FncallData{FuncSpan: d.funcSpan, Func: d.fn, Args: refs(t.refs, d.args)}
+}
+
+func (t *Tree) AddUnary(span token.Span, op token.Kind, x NodeID) NodeID {
+	i := uint32(len(t.unaries))
+	t.unaries = append(t.unaries, UnaryData{Op: op, X: x})
+	return t.addNode(Unary, span, i)
+}
+
+func (t *Tree) Unary(id NodeID) UnaryData {
+	n := t.Node(id)
+	if n.kind != Unary || int(n.data) >= len(t.unaries) {
+		return UnaryData{}
+	}
+	return t.unaries[n.data]
+}
+
+func (t *Tree) AddBinary(left NodeID, op token.Kind, right NodeID, span token.Span) NodeID {
+	i := uint32(len(t.binaries))
+	t.binaries = append(t.binaries, BinaryData{Left: left, Op: op, Right: right})
+	return t.addNode(Binary, span, i)
+}
+
+func (t *Tree) Binary(id NodeID) BinaryData {
+	n := t.Node(id)
+	if n.kind != Binary || int(n.data) >= len(t.binaries) {
+		return BinaryData{}
+	}
+	return t.binaries[n.data]
+}
+
+func (t *Tree) AddGroup(span token.Span, x NodeID) NodeID {
+	return t.addNode(Group, span, uint32(x))
+}
+
+func (t *Tree) Group(id NodeID) NodeID {
+	n := t.Node(id)
+	if n.kind != Group {
+		return 0
+	}
+	return NodeID(n.data)
+}
+
+func (k Kind) String() string {
+	switch k {
+	case Null:
+		return "Null"
+	case Bool:
+		return "Bool"
+	case Int:
+		return "Integer"
+	case Float:
+		return "Float"
+	case String:
+		return "String"
+	case List:
+		return "Array"
+	case Object:
+		return "Object"
+	case Schema:
+		return "Schema"
+	case Name:
+		return "Name"
+	case Path:
+		return "Path"
+	case Constraint:
+		return "Constraint"
+	case Attr:
+		return "Attr"
+	case Ident:
+		return "Ident"
+	case Call:
+		return "Call"
+	case Unary:
+		return "Unary"
+	case Binary:
+		return "Binary"
+	case Group:
+		return "Group"
+	}
+	return "Invalid"
+}
+
+func (k Kind) IsValue() bool {
+	switch k {
+	case Null, Bool, Int, Float, String, List, Object, Schema:
+		return true
+	}
+	return false
+}
+
+func (k Kind) IsTypeRef() bool {
+	switch k {
+	case Name, Path, List, Object:
+		return true
+	}
+	return false
+}
+
+func (k Kind) IsClause() bool {
+	return k == Constraint || k == Attr
+}
+
+func (k Kind) IsExpr() bool {
+	switch k {
+	case Null, Bool, Int, Float, String, List, Object,
+		Ident, Path, Call, Unary, Binary, Group:
+		return true
+	}
+	return false
+}
