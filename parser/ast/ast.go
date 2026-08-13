@@ -21,6 +21,27 @@ type (
 		data uint32
 	}
 
+	// Tree is an arena-backed AST tree.
+	Tree struct {
+		nodes []Node
+		texts []string
+
+		refs []NodeID
+
+		arrays  []sliceRefs
+		objects []sliceRefs
+		fields  []Field
+
+		paths     []sliceRefs
+		pathParts []PathPart
+
+		schemas  []schemaData
+		attrs    []AttrData
+		calls    []callData
+		unaries  []UnaryData
+		binaries []BinaryData
+	}
+
 	PathPart struct {
 		Span token.Span
 		Name TextID
@@ -76,26 +97,6 @@ type (
 		funcSpan token.Span
 		fn       TextID
 		args     sliceRefs
-	}
-
-	Tree struct {
-		nodes []Node
-		texts []string
-
-		refs []NodeID
-
-		arrays  []sliceRefs
-		objects []sliceRefs
-		fields  []Field
-
-		paths     []sliceRefs
-		pathParts []PathPart
-
-		schemas  []schemaData
-		attrs    []AttrData
-		calls    []callData
-		unaries  []UnaryData
-		binaries []BinaryData
 	}
 )
 
