@@ -311,11 +311,11 @@ func (t *Tree) Name(id NodeID) string {
 	return t.Text(TextID(n.data))
 }
 
-func (t *Tree) NewPathPart(span token.Span, name string) PathPart {
+func (t *Tree) NewPathPart(name string, span token.Span) PathPart {
 	return PathPart{Span: span, Name: t.AddText(name)}
 }
 
-func (t *Tree) AddPath(span token.Span, parts []PathPart) NodeID {
+func (t *Tree) AddPath(parts []PathPart, span token.Span) NodeID {
 	r := sliceRefs{off: uint32(len(t.pathParts)), len: uint32(len(parts))}
 	t.pathParts = append(t.pathParts, parts...)
 	i := uint32(len(t.paths))
@@ -358,7 +358,7 @@ func (t *Tree) Constraint(id NodeID) NodeID {
 	return NodeID(n.data)
 }
 
-func (t *Tree) AddAttr(span, nameSpan token.Span, name string, value NodeID, hasValue bool) NodeID {
+func (t *Tree) AddAttr(name string, value NodeID, hasValue bool, span, nameSpan token.Span) NodeID {
 	i := uint32(len(t.attrs))
 	t.attrs = append(t.attrs, AttrData{
 		NameSpan: nameSpan,
@@ -389,7 +389,7 @@ func (t *Tree) Ident(id NodeID) string {
 	return t.Text(TextID(n.data))
 }
 
-func (t *Tree) AddCall(span, funcSpan token.Span, fn string, args []NodeID) NodeID {
+func (t *Tree) AddCall(fn string, args []NodeID, span, funcSpan token.Span) NodeID {
 	i := uint32(len(t.calls))
 	t.calls = append(t.calls, callData{
 		funcSpan: funcSpan,

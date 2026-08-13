@@ -365,9 +365,9 @@ func emitRef(t *ast.Tree, r typeRef) (ast.NodeID, error) {
 		}
 		parts := make([]ast.PathPart, len(r.path))
 		for i := range r.path {
-			parts[i] = t.NewPathPart(z, r.path[i])
+			parts[i] = t.NewPathPart(r.path[i], z)
 		}
-		return t.AddPath(z, parts), nil
+		return t.AddPath(parts, z), nil
 	case refValue:
 		if r.value == nil {
 			return 0, fmt.Errorf("ks: invalid type reference")
@@ -400,13 +400,13 @@ func emitClause(t *ast.Tree, c Clause) (ast.NodeID, error) {
 			return 0, fmt.Errorf("ks: empty attribute name")
 		}
 		if !c.hasValue {
-			return t.AddAttr(z, z, c.name, 0, false), nil
+			return t.AddAttr(c.name, 0, false, z, z), nil
 		}
 		e, err := emitExpr(t, c.value)
 		if err != nil {
 			return 0, err
 		}
-		return t.AddAttr(z, z, c.name, e, true), nil
+		return t.AddAttr(c.name, e, true, z, z), nil
 	}
 
 	return 0, fmt.Errorf("ks: invalid clause")
@@ -439,9 +439,9 @@ func emitExpr(t *ast.Tree, e Expr) (ast.NodeID, error) {
 		}
 		parts := make([]ast.PathPart, len(e.path))
 		for i := range e.path {
-			parts[i] = t.NewPathPart(z, e.path[i])
+			parts[i] = t.NewPathPart(e.path[i], z)
 		}
-		return t.AddPath(z, parts), nil
+		return t.AddPath(parts, z), nil
 	case exprCall:
 		if e.name == "" {
 			return 0, fmt.Errorf("ks: empty function name")
@@ -454,7 +454,7 @@ func emitExpr(t *ast.Tree, e Expr) (ast.NodeID, error) {
 			}
 			args[i] = id
 		}
-		return t.AddCall(z, z, e.name, args), nil
+		return t.AddCall(e.name, args, z, z), nil
 	case exprUnary:
 		if !e.op.IsUnary() || e.x == nil {
 			return 0, fmt.Errorf("ks: invalid unary expression")
