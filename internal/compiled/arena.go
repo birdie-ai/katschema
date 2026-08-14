@@ -34,6 +34,7 @@ type Arena struct {
 	constraintHead  map[uint64]ConstraintID
 	constraintEnums []TypeID
 
+	hash hashFunc
 	// scratch is a reused buffer for temporary encoding of nodes.
 	scratch []byte
 
@@ -47,7 +48,11 @@ type Arena struct {
 }
 
 func NewArena() *Arena {
-	a := &Arena{}
+	return newArena(nil)
+}
+
+func newArena(h hashFunc) *Arena {
+	a := &Arena{hash: h}
 	a.init()
 	return a
 }
@@ -55,6 +60,9 @@ func NewArena() *Arena {
 func (a *Arena) init() {
 	if a.hashHead != nil {
 		return
+	}
+	if a.hash == nil {
+		a.hash = sum64
 	}
 
 	a.nodes = append(a.nodes, Node{})
@@ -88,7 +96,7 @@ func (a *Arena) Never() TypeID  { a.init(); return a.neverID }
 func (a *Arena) Null() TypeID   { a.init(); return a.nullID }
 func (a *Arena) Bool() TypeID   { a.init(); return a.boolID }
 func (a *Arena) Int() TypeID    { a.init(); return a.intID }
-func (a *Arena) Number() TypeID { a.init(); return a.numberID }
+func (a *Arena) Float() TypeID  { a.init(); return a.numberID }
 func (a *Arena) String() TypeID { a.init(); return a.stringID }
 
 func (a *Arena) Len() int { a.init(); return len(a.nodes) - 1 }

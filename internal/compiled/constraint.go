@@ -175,7 +175,7 @@ func (n *normalizer) inSet(left, right ast.NodeID) error {
 		return n.c.error(right, "right side of in must be a literal array")
 	}
 
-	values := n.c.t.Array(right)
+	values := n.c.t.List(right)
 	enum := make([]TypeID, 0, len(values))
 	for _, v := range values {
 		id, err := n.literal(v)

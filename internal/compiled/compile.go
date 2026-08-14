@@ -18,12 +18,6 @@ func (e *CompileError) Error() string { return "compile: " + e.Msg }
 
 // Compile lowers root into a canonical semantic type in a.
 func Compile(a *Arena, t *ast.Tree, root ast.NodeID) (TypeID, error) {
-	if a == nil {
-		return 0, fmt.Errorf("compile: nil arena")
-	}
-	if t == nil {
-		return 0, fmt.Errorf("compile: nil AST")
-	}
 	a.init()
 	c := compiler{a: a, t: t}
 	id, optional, err := c.value(root, false)
@@ -94,7 +88,7 @@ func isIntegerLexeme(s string) bool {
 }
 
 func (c *compiler) array(id ast.NodeID) (TypeID, error) {
-	elems := c.t.Array(id)
+	elems := c.t.List(id)
 	if len(elems) == 1 && c.hasSchemaSyntax(elems[0]) {
 		elem, optional, err := c.value(elems[0], false)
 		if err != nil {
@@ -130,7 +124,7 @@ func (c *compiler) hasSchemaSyntax(id ast.NodeID) bool {
 	case ast.Schema:
 		return true
 	case ast.List:
-		for _, x := range c.t.Array(id) {
+		for _, x := range c.t.List(id) {
 			if c.hasSchemaSyntax(x) {
 				return true
 			}
@@ -208,15 +202,15 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 			return c.a.Bool(), nil
 		case "int":
 			return c.a.Int(), nil
-		case "number":
-			return c.a.Number(), nil
+		case "float":
+			return c.a.Float(), nil
 		case "string":
 			return c.a.String(), nil
 		default:
 			return 0, c.error(id, "unresolved type %q", c.t.Name(id))
 		}
 	case ast.List:
-		elems := c.t.Array(id)
+		elems := c.t.List(id)
 		if len(elems) != 1 {
 			return 0, c.error(id, "array type must contain exactly one element schema")
 		}

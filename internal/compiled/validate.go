@@ -52,7 +52,7 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 			return false
 		}
 		elem := TypeID(n.data)
-		for _, v := range t.Array(value) {
+		for _, v := range t.List(value) {
 			if !a.valid(elem, t, v) {
 				return false
 			}
@@ -62,7 +62,7 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		if t.Node(value).Kind() != ast.List {
 			return false
 		}
-		want, got := a.tuple(typ), t.Array(value)
+		want, got := a.tuple(typ), t.List(value)
 		if len(want) != len(got) {
 			return false
 		}
@@ -163,7 +163,7 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 		case ast.String:
 			l = int64(utf8.RuneCountInString(t.String(value)))
 		case ast.List:
-			l = int64(len(t.Array(value)))
+			l = int64(len(t.List(value)))
 		case ast.Object:
 			l = int64(len(t.Object(value)))
 		default:

@@ -44,7 +44,7 @@ func BenchmarkValidateObject(b *testing.B) {
 		b.Fatal(err)
 	}
 	valueTree, valueRoot, err := ks.Build(ks.Object(
-		ks.Field("id", ks.LitInt("137")),
+		ks.Field("id", ks.LitInt(137)),
 		ks.Field("name", ks.LitString("Richard")),
 	))
 	if err != nil {

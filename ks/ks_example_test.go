@@ -16,7 +16,7 @@ func ExampleBuild() {
 			Binary(X(), In, ListExpr(LitString("admin"), LitString("user"), LitString("guest"))),
 		)),
 		Field("age", Optional(Where(Int(),
-			Binary(X(), Ge, IntExpr(LitInt("18"))),
+			Binary(X(), Ge, ValueExpr(LitInt(18))),
 		))),
 	))
 	if err != nil {

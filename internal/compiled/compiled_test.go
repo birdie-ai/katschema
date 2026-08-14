@@ -36,8 +36,8 @@ func TestCompileIntern(t *testing.T) {
 		b    ks.Value
 	}{
 		{"primitive", ks.Int(), ks.Int()},
-		{"literal int", ks.LitInt("10"), ks.LitInt("10")},
-		{"number spelling", ks.LitFloat("1.0"), ks.LitFloat("1e0")},
+		{"literal int", ks.LitInt(10), ks.LitInt(10)},
+		{"number spelling", ks.LitFloat(1.1), ks.LitFloat(1.10)},
 		{
 			"object order",
 			ks.Object(ks.Field("a", ks.Int()), ks.Field("b", ks.String())),
@@ -93,8 +93,8 @@ func TestHashCollisionDoesNotAliasTypes(t *testing.T) {
 func TestConstraintNormalization(t *testing.T) {
 	a := NewArena()
 	x := ks.X()
-	zero := ks.IntExpr(ks.LitInt("0"))
-	hundred := ks.IntExpr(ks.LitInt("100"))
+	zero := ks.IntExpr(ks.LitInt(0))
+	hundred := ks.IntExpr(ks.LitInt(100))
 
 	tests := []struct {
 		name string
@@ -165,9 +165,9 @@ func TestOptionalObjectOrdering(t *testing.T) {
 
 func TestValidation(t *testing.T) {
 	ranged := ks.Where(ks.Int(), ks.Binary(
-		ks.Binary(ks.IntExpr(ks.LitInt("0")), ks.Le, ks.X()),
+		ks.Binary(ks.IntExpr(ks.LitInt(0)), ks.Le, ks.X()),
 		ks.Le,
-		ks.IntExpr(ks.LitInt("100")),
+		ks.IntExpr(ks.LitInt(100)),
 	))
 
 	tests := []struct {
@@ -176,12 +176,12 @@ func TestValidation(t *testing.T) {
 		value  ks.Value
 		want   bool
 	}{
-		{"int", ks.Int(), ks.LitInt("10"), true},
-		{"int rejects float", ks.Int(), ks.LitInt("10.0"), false},
-		{"number accepts int", ks.Number(), ks.LitInt("10"), true},
-		{"range lower", ranged, ks.LitInt("0"), true},
-		{"range upper", ranged, ks.LitInt("100"), true},
-		{"range reject", ranged, ks.LitInt("101"), false},
+		{"int", ks.Int(), ks.LitInt(10), true},
+		{"int rejects float", ks.Int(), ks.LitFloat(10.0), false},
+		{"float accepts int", ks.Float(), ks.LitInt(10), true},
+		{"range lower", ranged, ks.LitInt(0), true},
+		{"range upper", ranged, ks.LitInt(100), true},
+		{"range reject", ranged, ks.LitInt(101), false},
 		{
 			"required field",
 			ks.Object(ks.Field("a", ks.String())),
@@ -203,7 +203,7 @@ func TestValidation(t *testing.T) {
 		{
 			"unknown field",
 			ks.Object(ks.Field("a", ks.String())),
-			ks.Object(ks.Field("a", ks.LitString("x")), ks.Field("b", ks.LitInt("1"))),
+			ks.Object(ks.Field("a", ks.LitString("x")), ks.Field("b", ks.LitInt(1))),
 			false,
 		},
 		{
@@ -215,19 +215,19 @@ func TestValidation(t *testing.T) {
 		{
 			"list reject",
 			ks.List(ks.String()),
-			ks.List(ks.LitString("a"), ks.LitInt("1")),
+			ks.List(ks.LitString("a"), ks.LitInt(1)),
 			false,
 		},
 		{
 			"literal tuple",
-			ks.List(ks.LitInt("1"), ks.LitString("a")),
-			ks.List(ks.LitInt("1"), ks.LitString("a")),
+			ks.List(ks.LitInt(1), ks.LitString("a")),
+			ks.List(ks.LitInt(1), ks.LitString("a")),
 			true,
 		},
 		{
 			"literal tuple reject",
-			ks.List(ks.LitInt("1"), ks.LitString("a")),
-			ks.List(ks.LitInt("1"), ks.LitString("b")),
+			ks.List(ks.LitInt(1), ks.LitString("a")),
+			ks.List(ks.LitInt(1), ks.LitString("b")),
 			false,
 		},
 		{

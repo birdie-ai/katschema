@@ -3,10 +3,16 @@ package ks
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/birdie-ai/katschema/parser/ast"
 	"github.com/birdie-ai/katschema/parser/token"
 )
+
+// NOTE(i4k): most types use tagged union for the reasons below:
+// 1. they are short-lived and naturally tagged (its kind), so interface based type switch is wasteful.
+// 2. as they are short-lived, we can (mostly) avoid pointer fields and then reduce GC scans (they will be all freed together when root is collected).
+// 3. make traversal consistent.
 
 type (
 	Value struct {
@@ -42,9 +48,9 @@ type (
 	}
 )
 
-// tokens are re-exported in this package so the user don't need to import the parser/token
-// package which is low-level and prone to change. Now they map one-to-one but we can evolve
-// then separately in the future, if needed.
+// NOTE(i4k); tokens are re-exported in this package so the user don't need to import the
+// [parser/token] package which is low-level and prone to change. Now they map one-to-one
+// but we can evolve then separately in the future, if needed.
 
 type Op = token.Kind
 
@@ -67,11 +73,13 @@ const (
 	Mod   = token.Mod
 )
 
+// Funcs below are common types.
+
 func Any() Value    { return Type("any") }
 func Never() Value  { return Type("never") }
 func Bool() Value   { return Type("bool") }
 func Int() Value    { return Type("int") }
-func Number() Value { return Type("number") }
+func Float() Value  { return Type("float") }
 func String() Value { return Type("string") }
 
 func X() Expr { return Ident("x") }
@@ -106,14 +114,14 @@ func LitBool(v bool) Value {
 	return Value{kind: valueBool, b: v}
 }
 
-// LitInt is the source int as-is.
-func LitInt(raw string) Value {
-	return Value{kind: valueInt, text: raw}
+// LitInt is a literal int.
+func LitInt(i int64) Value {
+	return Value{kind: valueInt, text: strconv.FormatInt(i, 10)}
 }
 
-// LitFloat is the source float as-is.
-func LitFloat(raw string) Value {
-	return Value{kind: valueFloat, text: raw}
+// LitFloat is a literal float.
+func LitFloat(f float64) Value {
+	return Value{kind: valueFloat, text: strconv.FormatFloat(f, 'f', -1, 64)}
 }
 
 func LitString(v string) Value {
@@ -152,6 +160,7 @@ func With(v Value, clauses ...Clause) Value {
 	}
 }
 
+// Optional makes the value optional.
 func Optional(v Value) Value {
 	return With(v, Flag("optional"))
 }
@@ -314,7 +323,7 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 		return t.AddInt(v.text, z), nil
 	case valueFloat:
 		if v.text == "" {
-			return 0, fmt.Errorf("ks: empty number")
+			return 0, fmt.Errorf("ks: empty float")
 		}
 		return t.AddFloat(v.text, z), nil
 	case valueString:
@@ -478,7 +487,7 @@ func emitExpr(t *ast.Tree, e Expr) (ast.NodeID, error) {
 		if err != nil {
 			return 0, err
 		}
-		return t.AddUnary(z, e.op, x), nil
+		return t.AddUnary(e.op, x, z), nil
 	case exprBinary:
 		if !e.op.IsBinary() || e.x == nil || e.y == nil {
 			return 0, fmt.Errorf("ks: invalid binary expression")
