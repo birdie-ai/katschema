@@ -72,6 +72,16 @@ func TestDSL(t *testing.T) {
 			),
 			want: `(int,(x+1)*2)`,
 		},
+		{
+			name: "With() wraps literal values in a schema",
+			root: With(LitBool(true), Flag("optional")),
+			want: `(true,optional)`,
+		},
+		{
+			name: "With() append clauses to existent schema",
+			root: With(String(), Flag("optional")),
+			want: `(string,optional)`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tree, root, err := Build(tc.root)

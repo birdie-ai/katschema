@@ -8,92 +8,43 @@ import (
 	"github.com/birdie-ai/katschema/parser/token"
 )
 
-type valueKind uint8
+type (
+	Value struct {
+		kind   valueKind
+		text   string
+		b      bool
+		elems  []Value
+		fields []Member
+		schema *schemaSpec
+	}
 
-const (
-	valueInvalid valueKind = iota
-	valueNull
-	valueBool
-	valueNumber
-	valueString
-	valueArray
-	valueObject
-	valueSchema
+	Member struct {
+		name  string
+		value Value
+	}
+
+	Clause struct {
+		kind     clauseKind
+		name     string
+		value    Expr
+		hasValue bool
+	}
+
+	Expr struct {
+		kind exprKind
+		name string
+		path []string
+		args []Expr
+		v    *Value
+		op   token.Kind
+		x    *Expr
+		y    *Expr
+	}
 )
 
-type refKind uint8
-
-const (
-	refInvalid refKind = iota
-	refName
-	refPath
-	refValue
-)
-
-type Value struct {
-	kind   valueKind
-	text   string
-	b      bool
-	elems  []Value
-	fields []Member
-	schema *schemaSpec
-}
-
-type Member struct {
-	name  string
-	value Value
-}
-
-type schemaSpec struct {
-	ref     typeRef
-	clauses []Clause
-}
-
-type typeRef struct {
-	kind  refKind
-	name  string
-	path  []string
-	value *Value
-}
-
-type clauseKind uint8
-
-const (
-	clauseInvalid clauseKind = iota
-	clauseConstraint
-	clauseAttr
-)
-
-type Clause struct {
-	kind     clauseKind
-	name     string
-	value    Expr
-	hasValue bool
-}
-
-type exprKind uint8
-
-const (
-	exprInvalid exprKind = iota
-	exprValue
-	exprIdent
-	exprPath
-	exprCall
-	exprUnary
-	exprBinary
-	exprGroup
-)
-
-type Expr struct {
-	kind exprKind
-	name string
-	path []string
-	args []Expr
-	v    *Value
-	op   token.Kind
-	x    *Expr
-	y    *Expr
-}
+// tokens are re-exported in this package so the user don't need to import the parser/token
+// package which is low-level and prone to change. Now they map one-to-one but we can evolve
+// then separately in the future, if needed.
 
 type Op = token.Kind
 
@@ -176,7 +127,8 @@ func Object(fields ...Member) Value {
 	return Value{kind: valueObject, fields: clone(fields)}
 }
 
-// With adds clauses to a schema. Arrays and objects are wrapped as type refs.
+// With adds clauses to a value. If the value is already a schema, then it append the
+// provided clauses to the schema otherwise it wraps the value in a literal schema.
 func With(v Value, clauses ...Clause) Value {
 	if v.kind == valueSchema && v.schema != nil {
 		s := *v.schema
@@ -286,6 +238,61 @@ func Emit(t *ast.Tree, v Value) (ast.NodeID, error) {
 	return emitValue(t, v)
 }
 
+type valueKind uint8
+
+const (
+	valueInvalid valueKind = iota
+	valueNull
+	valueBool
+	valueNumber
+	valueString
+	valueArray
+	valueObject
+	valueSchema
+)
+
+type refKind uint8
+
+const (
+	refInvalid refKind = iota
+	refName
+	refPath
+	refValue
+)
+
+type schemaSpec struct {
+	ref     typeRef
+	clauses []Clause
+}
+
+type typeRef struct {
+	kind  refKind
+	name  string
+	path  []string
+	value *Value
+}
+
+type clauseKind uint8
+
+const (
+	clauseInvalid clauseKind = iota
+	clauseConstraint
+	clauseAttr
+)
+
+type exprKind uint8
+
+const (
+	exprInvalid exprKind = iota
+	exprValue
+	exprIdent
+	exprPath
+	exprCall
+	exprUnary
+	exprBinary
+	exprGroup
+)
+
 func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 	var z token.Span
 
@@ -375,9 +382,6 @@ func emitRef(t *ast.Tree, r typeRef) (ast.NodeID, error) {
 		id, err := emitValue(t, *r.value)
 		if err != nil {
 			return 0, err
-		}
-		if !t.Node(id).Kind().IsTypeRef() {
-			return 0, fmt.Errorf("ks: %s cannot be used as a type reference", t.Node(id).Kind())
 		}
 		return id, nil
 	}
