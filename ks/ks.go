@@ -483,7 +483,7 @@ func emitExpr(t *ast.Tree, e Expr) (ast.NodeID, error) {
 		if err != nil {
 			return 0, err
 		}
-		return t.AddUnary(z, e.op, x), nil
+		return t.AddUnary(e.op, x, z), nil
 	case exprBinary:
 		if !e.op.IsBinary() || e.x == nil || e.y == nil {
 			return 0, fmt.Errorf("ks: invalid binary expression")

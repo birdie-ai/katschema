@@ -424,7 +424,7 @@ func (t *Tree) Fncall(id NodeID) FncallData {
 	return FncallData{FuncSpan: d.funcSpan, Func: d.fn, Args: refs(t.refs, d.args)}
 }
 
-func (t *Tree) AddUnary(span token.Span, op token.Kind, x NodeID) NodeID {
+func (t *Tree) AddUnary(op token.Kind, x NodeID, span token.Span) NodeID {
 	i := uint32(len(t.unaries))
 	t.unaries = append(t.unaries, UnaryData{Op: op, X: x})
 	return t.addNode(Unary, span, i)

@@ -62,15 +62,26 @@ func TestDSL(t *testing.T) {
 			want: `({"street":(string),"zip":(string)},optional)`,
 		},
 		{
-			name: "constraint with groups",
+			name: "constraint with syntactic group",
+			root: Where(Int(),
+				Binary(
+					Binary(X(), Add, ValueExpr(LitInt(1))),
+					Lt,
+					ValueExpr(LitInt(100)),
+				),
+			),
+			want: `(int,x+1<100)`,
+		},
+		{
+			name: "constraint with explicit group",
 			root: Where(Int(),
 				Binary(
 					Group(Binary(X(), Add, ValueExpr(LitInt(1)))),
-					Mul,
-					ValueExpr(LitInt(2)),
+					Lt,
+					ValueExpr(LitInt(100)),
 				),
 			),
-			want: `(int,(x+1)*2)`,
+			want: `(int,(x+1)<100)`,
 		},
 		{
 			name: "With() wraps literal values in a schema",

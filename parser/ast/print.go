@@ -9,7 +9,6 @@ import (
 )
 
 // Print writes root in compact Katschema syntax.
-//
 // Print preserves AST order.
 func Print(w io.Writer, t *Tree, root NodeID) error {
 	p := printer{w: w, t: t}
