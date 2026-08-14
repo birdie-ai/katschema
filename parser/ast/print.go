@@ -50,7 +50,7 @@ func (p *printer) node(id NodeID) {
 
 	case List:
 		p.write("[")
-		for i, v := range p.t.Array(id) {
+		for i, v := range p.t.List(id) {
 			if i != 0 {
 				p.write(",")
 			}

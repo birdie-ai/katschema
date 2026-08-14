@@ -282,7 +282,7 @@ func (t *Tree) AddList(elems []NodeID, span token.Span) NodeID {
 	return t.addNode(List, span, i)
 }
 
-func (t *Tree) Array(id NodeID) []NodeID {
+func (t *Tree) List(id NodeID) []NodeID {
 	n := t.Node(id)
 	if n.kind != List || int(n.data) >= len(t.arrays) {
 		return nil
@@ -477,7 +477,7 @@ func (k Kind) String() string {
 	case String:
 		return "String"
 	case List:
-		return "Array"
+		return "List"
 	case Object:
 		return "Object"
 	case Schema:
