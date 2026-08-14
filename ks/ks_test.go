@@ -62,7 +62,7 @@ func TestDSL(t *testing.T) {
 			want: `({"street":(string),"zip":(string)},optional)`,
 		},
 		{
-			name: "constraint with explicit groups",
+			name: "constraint with groups",
 			root: Where(Int(),
 				Binary(
 					Group(Binary(X(), Add, Num("1"))),
