@@ -15,7 +15,6 @@ func TestPrint(t *testing.T) {
 		name string
 		root func(*Tree) NodeID
 		want string
-		err  error
 	}
 
 	var z token.Span
