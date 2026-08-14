@@ -106,9 +106,14 @@ func LitBool(v bool) Value {
 	return Value{kind: valueBool, b: v}
 }
 
-// LitNumber is the source number as-is.
-func LitNumber(raw string) Value {
-	return Value{kind: valueNumber, text: raw}
+// LitInt is the source int as-is.
+func LitInt(raw string) Value {
+	return Value{kind: valueInt, text: raw}
+}
+
+// LitFloat is the source float as-is.
+func LitFloat(raw string) Value {
+	return Value{kind: valueFloat, text: raw}
 }
 
 func LitString(v string) Value {
@@ -180,10 +185,6 @@ func ValueExpr(v Value) Expr {
 	return Expr{kind: exprValue, v: &vv}
 }
 
-func Num(raw string) Expr {
-	return ValueExpr(LitNumber(raw))
-}
-
 func Str(v string) Expr {
 	return ValueExpr(LitString(v))
 }
@@ -194,6 +195,10 @@ func Boolean(v bool) Expr {
 
 func NullExpr() Expr {
 	return ValueExpr(LitNull())
+}
+
+func IntExpr(v Value) Expr {
+	return ValueExpr(v)
 }
 
 func ListExpr(v ...Value) Expr {
@@ -244,7 +249,8 @@ const (
 	valueInvalid valueKind = iota
 	valueNull
 	valueBool
-	valueNumber
+	valueInt
+	valueFloat
 	valueString
 	valueArray
 	valueObject
@@ -301,7 +307,12 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 		return t.AddNull(z), nil
 	case valueBool:
 		return t.AddBool(v.b, z), nil
-	case valueNumber:
+	case valueInt:
+		if v.text == "" {
+			return 0, fmt.Errorf("ks: empty int")
+		}
+		return t.AddInt(v.text, z), nil
+	case valueFloat:
 		if v.text == "" {
 			return 0, fmt.Errorf("ks: empty number")
 		}
