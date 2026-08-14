@@ -2,6 +2,7 @@ package ast
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/birdie-ai/katschema/parser/token"
@@ -284,4 +285,80 @@ func TestPrint(t *testing.T) {
 			}
 		})
 	}
+}
+
+func BenchmarkStdlibEncodingJSON(b *testing.B) {
+	b.StopTimer()
+	obj, a := benchValue()
+
+	// we encode a Katschema value that's JSON compatible and then
+	// benchmark encoding/json encoding the decoded value.
+
+	var buf bytes.Buffer
+	if err := Print(&buf, a, obj); err != nil {
+		b.Fatal(err)
+	}
+
+	var m map[string]any
+	err := json.Unmarshal(buf.Bytes(), &m)
+	if err != nil {
+		b.Fatal(err)
+	}
+	// NOTE(i4k): do not reset *buf* because otherwise encoding/json will be allocation free.
+	var buf2 bytes.Buffer
+	enc := json.NewEncoder(&buf2)
+
+	b.StartTimer()
+	for b.Loop() {
+		err := enc.Encode(m)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPrint(b *testing.B) {
+	b.StopTimer()
+	obj, a := benchValue()
+	b.StartTimer()
+	for b.Loop() {
+		var buf bytes.Buffer
+		if err := Print(&buf, a, obj); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchValue() (NodeID, *Tree) {
+	var z token.Span
+	a := New()
+	return a.AddObject([]Field{
+		{
+			Name:  a.AddText("str"),
+			Value: a.AddString("test", z),
+		},
+		{
+			Name:  a.AddText("int"),
+			Value: a.AddInt("1337", z),
+		},
+		{
+			Name:  a.AddText("null"),
+			Value: a.AddNull(z),
+		},
+		{
+			Name:  a.AddText("float"),
+			Value: a.AddFloat("-3.141519", z),
+		},
+		{
+			Name:  a.AddText("list"),
+			Value: a.AddList([]NodeID{a.AddString("str", z), a.AddInt("1337", z)}, z),
+		},
+		{
+			Name: a.AddText("obj"),
+			Value: a.AddObject([]Field{
+				a.NewField("str", a.AddString("test", z), z, z),
+				a.NewField("int", a.AddInt("1337", z), z, z),
+			}, z),
+		},
+	}, z), a
 }
