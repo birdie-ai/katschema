@@ -3,6 +3,7 @@ package ks
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/birdie-ai/katschema/parser/ast"
 	"github.com/birdie-ai/katschema/parser/token"
@@ -113,9 +114,14 @@ func LitBool(v bool) Value {
 	return Value{kind: valueBool, b: v}
 }
 
-// LitNumber is the source number as-is.
-func LitNumber(raw string) Value {
-	return Value{kind: valueNumber, text: raw}
+// LitInt is a literal int.
+func LitInt(i int64) Value {
+	return Value{kind: valueInt, text: strconv.FormatInt(i, 10)}
+}
+
+// LitFloat is a literal float.
+func LitFloat(f float64) Value {
+	return Value{kind: valueFloat, text: strconv.FormatFloat(f, 'f', -1, 64)}
 }
 
 func LitString(v string) Value {
@@ -188,10 +194,6 @@ func ValueExpr(v Value) Expr {
 	return Expr{kind: exprValue, v: &vv}
 }
 
-func Num(raw string) Expr {
-	return ValueExpr(LitNumber(raw))
-}
-
 func Str(v string) Expr {
 	return ValueExpr(LitString(v))
 }
@@ -252,7 +254,8 @@ const (
 	valueInvalid valueKind = iota
 	valueNull
 	valueBool
-	valueNumber
+	valueInt
+	valueFloat
 	valueString
 	valueArray
 	valueObject
@@ -309,9 +312,14 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 		return t.AddNull(z), nil
 	case valueBool:
 		return t.AddBool(v.b, z), nil
-	case valueNumber:
+	case valueInt:
 		if v.text == "" {
-			return 0, fmt.Errorf("ks: empty number")
+			return 0, fmt.Errorf("ks: empty int")
+		}
+		return t.AddInt(v.text, z), nil
+	case valueFloat:
+		if v.text == "" {
+			return 0, fmt.Errorf("ks: empty float")
 		}
 		return t.AddFloat(v.text, z), nil
 	case valueString:
