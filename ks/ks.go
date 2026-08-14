@@ -8,6 +8,11 @@ import (
 	"github.com/birdie-ai/katschema/parser/token"
 )
 
+// NOTE(i4k): most types use tagged union for the reasons below:
+// 1. they are short-lived and naturally tagged (its kind), so interface based type switch is wasteful.
+// 2. as they are short-lived, we can (mostly) avoid pointer fields and then reduce GC scans (they will be all freed together when root is collected).
+// 3. make traversal consistent.
+
 type (
 	Value struct {
 		kind   valueKind
@@ -42,9 +47,9 @@ type (
 	}
 )
 
-// tokens are re-exported in this package so the user don't need to import the parser/token
-// package which is low-level and prone to change. Now they map one-to-one but we can evolve
-// then separately in the future, if needed.
+// NOTE(i4k); tokens are re-exported in this package so the user don't need to import the
+// [parser/token] package which is low-level and prone to change. Now they map one-to-one
+// but we can evolve then separately in the future, if needed.
 
 type Op = token.Kind
 
@@ -67,11 +72,13 @@ const (
 	Mod   = token.Mod
 )
 
+// Funcs below are common types.
+
 func Any() Value    { return Type("any") }
 func Never() Value  { return Type("never") }
 func Bool() Value   { return Type("bool") }
 func Int() Value    { return Type("int") }
-func Number() Value { return Type("number") }
+func Float() Value  { return Type("float") }
 func String() Value { return Type("string") }
 
 func X() Expr { return Ident("x") }
@@ -147,6 +154,7 @@ func With(v Value, clauses ...Clause) Value {
 	}
 }
 
+// Optional makes the value optional.
 func Optional(v Value) Value {
 	return With(v, Flag("optional"))
 }
