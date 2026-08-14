@@ -158,7 +158,18 @@ func (p *printer) write(s string) {
 	if p.err != nil {
 		return
 	}
-	_, p.err = io.WriteString(p.w, s)
+	if avbuf, ok := p.w.(interface{ AvailableBuffer() []byte }); ok {
+		// NOTE(i4k): The AvailableBuffer() method is a recent (go > 1.18) addition to stdlib
+		// that allows for combining [io.Writer] and Append-like functions that works on []byte.
+		// Check below:
+		// https://pkg.go.dev/bytes#Buffer.AvailableBuffer
+		// https://pkg.go.dev/bufio#Writer.AvailableBuffer
+		b := avbuf.AvailableBuffer()
+		b = append(b, []byte(s)...)
+		_, p.err = p.w.Write(b)
+	} else {
+		_, p.err = io.WriteString(p.w, s)
+	}
 }
 
 func (p *printer) failf(format string, args ...any) {
