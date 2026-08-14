@@ -7,6 +7,20 @@ on:
       - main
 
 jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Testing
+        run: go test ./... -timeout 60s -race -shuffle on
+
   grammar-validation:
     name: Validate Ohm Grammar Examples
     runs-on: ubuntu-24.04
