@@ -233,19 +233,11 @@ func Group(x Expr) Expr {
 // Build creates a synthetic AST. All source spans are zero.
 func Build(v Value) (*ast.Tree, ast.NodeID, error) {
 	t := ast.New()
-	id, err := Emit(t, v)
+	n, err := emitValue(t, v)
 	if err != nil {
 		return nil, 0, err
 	}
-	return t, id, nil
-}
-
-// Emit appends v to t and returns its root node.
-func Emit(t *ast.Tree, v Value) (ast.NodeID, error) {
-	if t == nil {
-		return 0, fmt.Errorf("ks: nil AST tree")
-	}
-	return emitValue(t, v)
+	return t, n, nil
 }
 
 type valueKind uint8
@@ -305,7 +297,10 @@ const (
 )
 
 func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
-	var z token.Span
+	var (
+		z   token.Span
+		err error
+	)
 
 	switch v.kind {
 	case valueNull:
@@ -313,25 +308,18 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 	case valueBool:
 		return t.AddBool(v.b, z), nil
 	case valueInt:
-		if v.text == "" {
-			return 0, fmt.Errorf("ks: empty int")
-		}
 		return t.AddInt(v.text, z), nil
 	case valueFloat:
-		if v.text == "" {
-			return 0, fmt.Errorf("ks: empty float")
-		}
 		return t.AddFloat(v.text, z), nil
 	case valueString:
 		return t.AddString(v.text, z), nil
 	case valueArray:
 		elems := make([]ast.NodeID, len(v.elems))
 		for i := range v.elems {
-			id, err := emitValue(t, v.elems[i])
+			elems[i], err = emitValue(t, v.elems[i])
 			if err != nil {
 				return 0, err
 			}
-			elems[i] = id
 		}
 		return t.AddList(elems, z), nil
 	case valueObject:
@@ -345,13 +333,10 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 		}
 		return t.AddObject(fields, z), nil
 	case valueSchema:
-		if v.schema == nil {
-			return 0, fmt.Errorf("ks: invalid schema")
-		}
 		return emitSchema(t, *v.schema)
+	default:
+		panic(fmt.Errorf("ks: invalid valuekind %v", v.kind))
 	}
-
-	return 0, fmt.Errorf("ks: invalid value")
 }
 
 func emitSchema(t *ast.Tree, s schemaSpec) (ast.NodeID, error) {
@@ -437,9 +422,6 @@ func emitExpr(t *ast.Tree, e Expr) (ast.NodeID, error) {
 
 	switch e.kind {
 	case exprValue:
-		if e.v == nil {
-			return 0, fmt.Errorf("ks: invalid value expression")
-		}
 		id, err := emitValue(t, *e.v)
 		if err != nil {
 			return 0, err
@@ -449,23 +431,14 @@ func emitExpr(t *ast.Tree, e Expr) (ast.NodeID, error) {
 		}
 		return id, nil
 	case exprIdent:
-		if e.name == "" {
-			return 0, fmt.Errorf("ks: empty identifier")
-		}
 		return t.AddIdent(e.name, z), nil
 	case exprPath:
-		if len(e.path) == 0 {
-			return 0, fmt.Errorf("ks: empty expression path")
-		}
 		parts := make([]ast.PathPart, len(e.path))
 		for i := range e.path {
 			parts[i] = t.NewPathPart(e.path[i], z)
 		}
 		return t.AddPath(parts, z), nil
 	case exprCall:
-		if e.name == "" {
-			return 0, fmt.Errorf("ks: empty function name")
-		}
 		args := make([]ast.NodeID, len(e.args))
 		for i := range e.args {
 			id, err := emitExpr(t, e.args[i])
@@ -498,22 +471,22 @@ func emitExpr(t *ast.Tree, e Expr) (ast.NodeID, error) {
 		}
 		return t.AddBinary(left, e.op, right, z), nil
 	case exprGroup:
-		if e.x == nil {
-			return 0, fmt.Errorf("ks: invalid group")
-		}
 		x, err := emitExpr(t, *e.x)
 		if err != nil {
 			return 0, err
 		}
 		return t.AddGroup(z, x), nil
 	}
-
 	return 0, fmt.Errorf("ks: invalid expression")
 }
 
 func clone[T any](v []T) []T {
-	if len(v) == 0 {
+	if v == nil {
 		return nil
+	}
+	if len(v) == 0 {
+		var z []T
+		return z
 	}
 	return append([]T(nil), v...)
 }

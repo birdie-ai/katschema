@@ -42,16 +42,24 @@ func TestDSL(t *testing.T) {
 		{
 			name: "object",
 			root: Object(
-				Field("id", Type("uuid")),
-				Field("name", String()),
-				Field("role", Where(String(),
-					Binary(X(), In, ListExpr(LitString("admin"), LitString("user"), LitString("guest"))),
-				)),
-				Field("age", Optional(Where(Int(),
-					Binary(X(), Ge, ValueExpr(LitInt(18))),
+				Field("id", With(String(), Flag("pk"))),
+				Field("organization_id", With(Int(), Flag("pk"))),
+				Field("text", Type("analyzed")),
+				Field("kind", With(
+					String(),
+					Check(
+						Binary(X(), In, ListExpr(
+							LitString("support_ticket"),
+							LitString("nps"),
+							LitString("complaint"),
+							LitString("etc"),
+						)),
+					))),
+				Field("rating", Optional(Where(Int(),
+					Binary(Binary(ValueExpr(LitInt(0)), Le, X()), Le, ValueExpr(LitInt(10))),
 				))),
 			),
-			want: `{"id":(uuid),"name":(string),"role":(string,x in ["admin","user","guest"]),"age":(int,x>=18,optional)}`,
+			want: `{"id":(string,pk),"organization_id":(int,pk),"text":(analyzed),"kind":(string,x in ["support_ticket","nps","complaint","etc"]),"rating":(int,0<=x<=10,optional)}`,
 		},
 		{
 			name: "optional literal object",
@@ -107,5 +115,32 @@ func TestDSL(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func BenchmarkBuild(b *testing.B) {
+	obj := Object(
+		Field("id", With(String(), Flag("pk"))),
+		Field("organization_id", With(Int(), Flag("pk"))),
+		Field("text", Type("analyzed")),
+		Field("kind", With(
+			String(),
+			Check(
+				Binary(X(), In, ListExpr(
+					LitString("support_ticket"),
+					LitString("nps"),
+					LitString("complaint"),
+					LitString("etc"),
+				)),
+			))),
+		Field("rating", Optional(Where(Int(),
+			Binary(Binary(ValueExpr(LitInt(0)), Le, X()), Le, ValueExpr(LitInt(10))),
+		))),
+	)
+	for b.Loop() {
+		_, _, err := Build(obj)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
