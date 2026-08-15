@@ -1,8 +1,3 @@
-// Package compiled contains Katschema's canonical semantic representation.
-//
-// An Arena is append-only while schemas are compiled. Type references are
-// compact int32 IDs. Equal semantic types are interned and therefore share a
-// TypeID within an arena.
 package compiled
 
 type TypeID int32
@@ -18,11 +13,11 @@ const (
 	Null
 	Bool
 	Int
-	Number
+	Float
 	String
 	BoolLit
 	IntLit
-	NumberLit
+	FloatLit
 	StringLit
 	List
 	Tuple
@@ -42,7 +37,7 @@ func (k Kind) String() string {
 		return "bool"
 	case Int:
 		return "int"
-	case Number:
+	case Float:
 		return "number"
 	case String:
 		return "string"
@@ -50,7 +45,7 @@ func (k Kind) String() string {
 		return "bool literal"
 	case IntLit:
 		return "int literal"
-	case NumberLit:
+	case FloatLit:
 		return "number literal"
 	case StringLit:
 		return "string literal"

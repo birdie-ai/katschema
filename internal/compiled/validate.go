@@ -30,7 +30,7 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		return t.Node(value).Kind() == ast.Bool
 	case Int:
 		return astInt(t, value)
-	case Number:
+	case Float:
 		return asFloat(t, value)
 	case String:
 		return t.Node(value).Kind() == ast.String
@@ -39,7 +39,7 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 	case IntLit:
 		v, ok := astInt64(t, value)
 		return ok && v == a.ints[n.data]
-	case NumberLit:
+	case FloatLit:
 		if t.Node(value).Kind() != ast.Float {
 			return false
 		}
@@ -208,15 +208,31 @@ func asFloat(t *ast.Tree, id ast.NodeID) bool {
 }
 
 func astFloat64(t *ast.Tree, id ast.NodeID) (float64, bool) {
-	var raw string
 	switch t.Node(id).Kind() {
 	case ast.Int:
-		raw = t.Int(id)
+		// NOTE(i4k): the maximum integer representable in a float64 without loss of precision is 2^53.
+		// Here we are solving a subtle bug that happens whenever you interpret a JSON number value
+		// as integer in the application side, because when you parse a JSON number with only
+		// an integral part that's bigger than 2^53 you silently lose information.
+		// Better safe than sorry! we reject those cases and then the user must explicitly use the
+		// float number syntax in the source in order to explicitly tell that loss of precision is
+		// fine.
+		// OpenAPI spec has `integer` and `int64`: https://swagger.io/docs/specification/v3_0/data-models/data-types/#numbers
+		// but you have to protect yourself and sometimes buggy software don't even allow you to
+		// handle this properly: https://github.com/ogen-go/ogen/issues/1144
+
+		i, err := strconv.ParseInt(t.Int(id), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		if i > int64(2<<53) {
+			return 0, false
+		}
+		return float64(i), true
 	case ast.Float:
-		raw = t.Float(id)
+		v, err := strconv.ParseFloat(t.Float(id), 64)
+		return canonicalFloat(v), err == nil
 	default:
 		return 0, false
 	}
-	v, err := strconv.ParseFloat(raw, 64)
-	return canonicalFloat(v), err == nil
 }

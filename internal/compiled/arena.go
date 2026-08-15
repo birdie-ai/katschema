@@ -34,8 +34,17 @@ type Arena struct {
 	constraintHead  map[uint64]ConstraintID
 	constraintEnums []TypeID
 
+	// NOTE(i4k): this is only used by tests to force a collision and check if we
+	// are not overriding existing entries in such cases.
 	hash hashFunc
-	// scratch is a reused buffer for temporary encoding of nodes.
+
+	// NOTE(i4k): scratch is a reused buffer for temporary encoding of nodes.
+	// After [Compile] returns, the capacity of this buffer is equal the binary
+	// encoding of the largest node encoded by the arena. In other words, the
+	// scratch backing array never shrinks, which could be a source of leak if
+	// the same arena is used for compiling an arbitrary large number of nodes.
+	// There's no Reset() of the arena (jsut yet) and we can shring it to a sane
+	// minimum size when we need this. I hope I don't regret this comment!
 	scratch []byte
 
 	anyID    TypeID
@@ -43,7 +52,7 @@ type Arena struct {
 	nullID   TypeID
 	boolID   TypeID
 	intID    TypeID
-	numberID TypeID
+	floatID  TypeID
 	stringID TypeID
 }
 
@@ -87,7 +96,7 @@ func (a *Arena) init() {
 	a.nullID = a.internSimple(Null)
 	a.boolID = a.internSimple(Bool)
 	a.intID = a.internSimple(Int)
-	a.numberID = a.internSimple(Number)
+	a.floatID = a.internSimple(Float)
 	a.stringID = a.internSimple(String)
 }
 
@@ -96,7 +105,7 @@ func (a *Arena) Never() TypeID  { a.init(); return a.neverID }
 func (a *Arena) Null() TypeID   { a.init(); return a.nullID }
 func (a *Arena) Bool() TypeID   { a.init(); return a.boolID }
 func (a *Arena) Int() TypeID    { a.init(); return a.intID }
-func (a *Arena) Float() TypeID  { a.init(); return a.numberID }
+func (a *Arena) Float() TypeID  { a.init(); return a.floatID }
 func (a *Arena) String() TypeID { a.init(); return a.stringID }
 
 func (a *Arena) Len() int { a.init(); return len(a.nodes) - 1 }
@@ -196,21 +205,21 @@ func (a *Arena) internInt(v int64) TypeID {
 	return a.appendNode(Node{kind: IntLit, data: i}, fp, a.hashHead[fp])
 }
 
-func (a *Arena) internNumber(v float64) TypeID {
+func (a *Arena) internFloat(v float64) TypeID {
 	v = canonicalFloat(v)
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(NumberLit))
+	a.scratch = append(a.scratch, encodingVersion, byte(FloatLit))
 	a.scratch = appendFloat64(a.scratch, v)
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == NumberLit && floatEqual(a.numbers[n.data], v)
+		return n.kind == FloatLit && floatEqual(a.numbers[n.data], v)
 	}); id != 0 {
 		return id
 	}
 	i := int32(len(a.numbers))
 	a.numbers = append(a.numbers, v)
-	return a.appendNode(Node{kind: NumberLit, data: i}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: FloatLit, data: i}, fp, a.hashHead[fp])
 }
 
 func (a *Arena) internStringLit(s string) TypeID {

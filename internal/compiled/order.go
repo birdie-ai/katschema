@@ -33,13 +33,13 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 	case BoolLit:
 		return bn.kind == Bool
 	case IntLit:
-		return bn.kind == Int || bn.kind == Number
-	case NumberLit:
-		return bn.kind == Number
+		return bn.kind == Int || bn.kind == Float
+	case FloatLit:
+		return bn.kind == Float
 	case StringLit:
 		return bn.kind == String
 	case Int:
-		return bn.kind == Number
+		return bn.kind == Float
 	case List:
 		return bn.kind == List && x.Subtype(TypeID(an.data), TypeID(bn.data))
 	case Tuple:
@@ -119,7 +119,7 @@ func (x *Arena) findField(fields []Field, name string) int {
 
 func (x *Arena) isLiteral(id TypeID) bool {
 	switch x.Node(id).kind {
-	case Null, BoolLit, IntLit, NumberLit, StringLit:
+	case Null, BoolLit, IntLit, FloatLit, StringLit:
 		return true
 	}
 	return false
@@ -135,7 +135,7 @@ func (x *Arena) literalSatisfiesConstraint(lit TypeID, id ConstraintID) bool {
 		n.ints = intBounds{flags: d.intFlags, min: d.intMin, max: d.intMax}
 	}
 	if d.flags&constraintNumber != 0 {
-		n.numbers = numberBounds{flags: d.numFlags, min: d.numMin, max: d.numMax}
+		n.floats = floatBounds{flags: d.numFlags, min: d.numMin, max: d.numMax}
 	}
 	if d.flags&constraintLen != 0 {
 		n.length = lenBounds{flags: d.lenFlags, min: d.lenMin, max: d.lenMax}

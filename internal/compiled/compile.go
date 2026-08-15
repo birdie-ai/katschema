@@ -16,7 +16,7 @@ type CompileError struct {
 
 func (e *CompileError) Error() string { return "compile: " + e.Msg }
 
-// Compile lowers root into a canonical semantic type in a.
+// Compile lowers root into a canonical semantic type in the arena.
 func Compile(a *Arena, t *ast.Tree, root ast.NodeID) (TypeID, error) {
 	a.init()
 	c := compiler{a: a, t: t}
@@ -24,8 +24,17 @@ func Compile(a *Arena, t *ast.Tree, root ast.NodeID) (TypeID, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	// TODO(i4k): we have to decide if we allow optional in any value.
+	// The problem is that if whole schema is (string, optional)
+	// how does you provide emptiness? does it make sense to accept
+	// a literal `null` for such type? I don't like this because null is
+	// a literal value in Katschema, not the absense.
+	// So maybe we should allow parsing an empty string into a ks.Never and
+	// then consider this as a valid emptiness? we can easily address this
+	// in the future, blocking now such usage until we decide what to do!
 	if optional {
-		return 0, c.error(root, "optional is only valid on object fields")
+		return 0, c.error(root, "optional can only be used in object fields")
 	}
 	return id, nil
 }
@@ -50,7 +59,7 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 		t, err := c.intLiteral(id, c.t.Int(id))
 		return t, false, err
 	case ast.Float:
-		t, err := c.numberLiteral(id, c.t.Float(id))
+		t, err := c.floatLiteral(id, c.t.Float(id))
 		return t, false, err
 	case ast.String:
 		return c.a.internStringLit(c.t.String(id)), false, nil
@@ -75,12 +84,12 @@ func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
 	return c.a.internInt(v), nil
 }
 
-func (c *compiler) numberLiteral(id ast.NodeID, raw string) (TypeID, error) {
+func (c *compiler) floatLiteral(id ast.NodeID, raw string) (TypeID, error) {
 	v, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return 0, c.error(id, "invalid number literal %q", raw)
 	}
-	return c.a.internNumber(v), nil
+	return c.a.internFloat(v), nil
 }
 
 func isIntegerLexeme(s string) bool {

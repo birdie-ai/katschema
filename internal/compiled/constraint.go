@@ -16,7 +16,7 @@ type intBounds struct {
 	max   int64
 }
 
-type numberBounds struct {
+type floatBounds struct {
 	flags boundFlags
 	min   float64
 	max   float64
@@ -29,10 +29,10 @@ type lenBounds struct {
 }
 
 type normConstraint struct {
-	ints    intBounds
-	numbers numberBounds
-	length  lenBounds
-	enum    []TypeID // nil means no enum restriction; empty non-nil means impossible.
+	ints   intBounds
+	floats floatBounds
+	length lenBounds
+	enum   []TypeID // nil means no enum restriction; empty non-nil means impossible.
 }
 
 func (c *compiler) normalizeConstraints(base TypeID, clauses []ast.NodeID) (ConstraintID, bool, error) {
@@ -69,7 +69,7 @@ func (n *normalizer) consume(id ast.NodeID) error {
 		return n.consume(b.Right)
 	}
 
-	if isOrderOp(b.Op) {
+	if isRangeOp(b.Op) {
 		values, ops := n.flattenOrder(id)
 		if len(ops) > 1 {
 			for i, op := range ops {
@@ -98,7 +98,7 @@ func (n *normalizer) ungroup(id ast.NodeID) ast.NodeID {
 	return id
 }
 
-func isOrderOp(op token.Kind) bool {
+func isRangeOp(op token.Kind) bool {
 	switch op {
 	case token.Lt, token.Le, token.Gt, token.Ge:
 		return true
@@ -126,7 +126,7 @@ func (n *normalizer) flattenOrder(id ast.NodeID) ([]ast.NodeID, []token.Kind) {
 	left := n.ungroup(b.Left)
 	if n.c.t.Node(left).Kind() == ast.Binary {
 		lb := n.c.t.Binary(left)
-		if isOrderOp(lb.Op) {
+		if isRangeOp(lb.Op) {
 			values, ops := n.flattenOrder(left)
 			return append(values, b.Right), append(ops, b.Op)
 		}
@@ -169,10 +169,10 @@ func (n *normalizer) inSet(left, right ast.NodeID) error {
 	left = n.ungroup(left)
 	right = n.ungroup(right)
 	if !n.isX(left) {
-		return n.c.error(left, "left side of in must be x")
+		return n.c.error(left, "left side of IN must be x")
 	}
 	if n.c.t.Node(right).Kind() != ast.List {
-		return n.c.error(right, "right side of in must be a literal array")
+		return n.c.error(right, "right side of IN must be a literal list")
 	}
 
 	values := n.c.t.List(right)
@@ -249,7 +249,7 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 		}
 		n.applyInt(op, v)
 		return nil
-	case Number:
+	case Float:
 		v, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
 			return n.c.error(literal, "invalid numeric bound %q", raw)
@@ -268,10 +268,11 @@ func (n *normalizer) lengthBound(op token.Kind, literal ast.NodeID) error {
 	default:
 		return n.c.error(literal, "len(x) is invalid for %s", kind)
 	}
-	raw, ok := n.numericRaw(literal)
-	if !ok || !isIntegerLexeme(raw) {
-		return n.c.error(literal, "length bound must be an integer")
+	litKind := n.c.t.Node(literal).Kind()
+	if litKind != ast.Int {
+		return n.c.error(literal, "length comparison requires integer right-hand-side but got %s", litKind)
 	}
+	raw := n.c.t.Int(literal)
 	v, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || v < 0 {
 		return n.c.error(literal, "length bound must be a non-negative int64")
@@ -320,7 +321,7 @@ func (n *normalizer) applyInt(op token.Kind, v int64) {
 }
 
 func (n *normalizer) applyNumber(op token.Kind, v float64) {
-	r := &n.n.numbers
+	r := &n.n.floats
 	switch op {
 	case token.Gt, token.Ge:
 		inclusive := op == token.Ge
@@ -401,7 +402,7 @@ func (n *normalizer) addEnum(v []TypeID) {
 }
 
 func (n *normalizer) finish() (ConstraintID, bool, error) {
-	if contradictoryInt(n.n.ints) || contradictoryNumber(n.n.numbers) || contradictoryLen(n.n.length) {
+	if contradictoryInt(n.n.ints) || contradictoryNumber(n.n.floats) || contradictoryLen(n.n.length) {
 		return 0, true, nil
 	}
 
@@ -413,10 +414,10 @@ func (n *normalizer) finish() (ConstraintID, bool, error) {
 				n.n.enum = []TypeID{n.c.a.internInt(n.n.ints.min)}
 				n.n.ints = intBounds{}
 			}
-		case Number:
-			if singletonNumber(n.n.numbers) {
-				n.n.enum = []TypeID{n.c.a.internNumber(n.n.numbers.min)}
-				n.n.numbers = numberBounds{}
+		case Float:
+			if singletonNumber(n.n.floats) {
+				n.n.enum = []TypeID{n.c.a.internFloat(n.n.floats.min)}
+				n.n.floats = floatBounds{}
 			}
 		}
 	}
@@ -435,11 +436,11 @@ func (n *normalizer) finish() (ConstraintID, bool, error) {
 		// Once the finite set has been filtered, the other restrictions are
 		// redundant and would only create multiple encodings for the same set.
 		n.n.ints = intBounds{}
-		n.n.numbers = numberBounds{}
+		n.n.floats = floatBounds{}
 		n.n.length = lenBounds{}
 	}
 
-	if n.n.ints.flags == 0 && n.n.numbers.flags == 0 && n.n.length.flags == 0 && n.n.enum == nil {
+	if n.n.ints.flags == 0 && n.n.floats.flags == 0 && n.n.length.flags == 0 && n.n.enum == nil {
 		return 0, false, nil
 	}
 	return n.c.a.internConstraint(n.n), false, nil
@@ -455,7 +456,7 @@ func contradictoryInt(r intBounds) bool {
 	return r.min == r.max && (r.flags&minInclusive == 0 || r.flags&maxInclusive == 0)
 }
 
-func contradictoryNumber(r numberBounds) bool {
+func contradictoryNumber(r floatBounds) bool {
 	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
 		return false
 	}
@@ -479,7 +480,7 @@ func singletonInt(r intBounds) bool {
 	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && r.min == r.max
 }
 
-func singletonNumber(r numberBounds) bool {
+func singletonNumber(r floatBounds) bool {
 	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && r.min == r.max
 }
 
@@ -491,10 +492,10 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 		a.scratch = appendInt64(a.scratch, n.ints.min)
 		a.scratch = appendInt64(a.scratch, n.ints.max)
 	}
-	if n.numbers.flags != 0 {
-		a.scratch = append(a.scratch, constraintNumber, byte(n.numbers.flags))
-		a.scratch = appendFloat64(a.scratch, n.numbers.min)
-		a.scratch = appendFloat64(a.scratch, n.numbers.max)
+	if n.floats.flags != 0 {
+		a.scratch = append(a.scratch, constraintNumber, byte(n.floats.flags))
+		a.scratch = appendFloat64(a.scratch, n.floats.min)
+		a.scratch = appendFloat64(a.scratch, n.floats.max)
 	}
 	if n.length.flags != 0 {
 		a.scratch = append(a.scratch, constraintLen, byte(n.length.flags))
@@ -521,9 +522,9 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 		d.flags |= constraintInt
 		d.intFlags, d.intMin, d.intMax = n.ints.flags, n.ints.min, n.ints.max
 	}
-	if n.numbers.flags != 0 {
+	if n.floats.flags != 0 {
 		d.flags |= constraintNumber
-		d.numFlags, d.numMin, d.numMax = n.numbers.flags, n.numbers.min, n.numbers.max
+		d.numFlags, d.numMin, d.numMax = n.floats.flags, n.floats.min, n.floats.max
 	}
 	if n.length.flags != 0 {
 		d.flags |= constraintLen
@@ -546,7 +547,7 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 func (a *Arena) constraintEqual(id ConstraintID, n normConstraint) bool {
 	d := a.constraints[id]
 	if (d.flags&constraintInt != 0) != (n.ints.flags != 0) ||
-		(d.flags&constraintNumber != 0) != (n.numbers.flags != 0) ||
+		(d.flags&constraintNumber != 0) != (n.floats.flags != 0) ||
 		(d.flags&constraintLen != 0) != (n.length.flags != 0) ||
 		(d.flags&constraintEnum != 0) != (n.enum != nil) {
 		return false
@@ -554,7 +555,7 @@ func (a *Arena) constraintEqual(id ConstraintID, n normConstraint) bool {
 	if n.ints.flags != 0 && (d.intFlags != n.ints.flags || d.intMin != n.ints.min || d.intMax != n.ints.max) {
 		return false
 	}
-	if n.numbers.flags != 0 && (d.numFlags != n.numbers.flags || !floatEqual(d.numMin, n.numbers.min) || !floatEqual(d.numMax, n.numbers.max)) {
+	if n.floats.flags != 0 && (d.numFlags != n.floats.flags || !floatEqual(d.numMin, n.floats.min) || !floatEqual(d.numMax, n.floats.max)) {
 		return false
 	}
 	if n.length.flags != 0 && (d.lenFlags != n.length.flags || d.lenMin != n.length.min || d.lenMax != n.length.max) {
@@ -615,7 +616,7 @@ func (a *Arena) compareLiteral(x, y TypeID) int {
 		if xv > yv {
 			return 1
 		}
-	case NumberLit:
+	case FloatLit:
 		xv, yv := a.numbers[xn.data], a.numbers[yn.data]
 		if xv < yv {
 			return -1
@@ -654,8 +655,8 @@ func (a *Arena) literalCompatible(base, lit TypeID) bool {
 		return lk == BoolLit
 	case Int:
 		return lk == IntLit
-	case Number:
-		return lk == IntLit || lk == NumberLit
+	case Float:
+		return lk == IntLit || lk == FloatLit
 	case String:
 		return lk == StringLit
 	}
@@ -669,17 +670,17 @@ func (a *Arena) literalSatisfiesNorm(id TypeID, n normConstraint) bool {
 			return false
 		}
 	}
-	if n.numbers.flags != 0 {
+	if n.floats.flags != 0 {
 		var v float64
 		switch node.kind {
 		case IntLit:
 			v = float64(a.ints[node.data])
-		case NumberLit:
+		case FloatLit:
 			v = a.numbers[node.data]
 		default:
 			return false
 		}
-		if !checkNumberBounds(v, n.numbers.flags, n.numbers.min, n.numbers.max) {
+		if !checkNumberBounds(v, n.floats.flags, n.floats.min, n.floats.max) {
 			return false
 		}
 	}
