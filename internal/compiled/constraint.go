@@ -233,16 +233,14 @@ func (n *normalizer) isLenX(id ast.NodeID) bool {
 
 func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 	kind := n.c.a.baseKind(n.base)
-	raw, ok := n.numericRaw(literal)
-	if !ok {
-		return n.c.error(literal, "numeric comparison requires a numeric literal")
-	}
 
+	litKind := n.c.t.Node(literal).Kind()
 	switch kind {
 	case Int:
-		if !isIntegerLexeme(raw) {
+		if litKind != ast.Int {
 			return n.c.error(literal, "int constraint requires an integer bound")
 		}
+		raw := n.c.t.Int(literal)
 		v, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
 			return n.c.error(literal, "integer bound %q is outside int64", raw)
@@ -250,6 +248,10 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 		n.applyInt(op, v)
 		return nil
 	case Float:
+		if litKind != ast.Float {
+			return n.c.error(literal, "float constraint requires an float bound")
+		}
+		raw := n.c.t.Float(literal)
 		v, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
 			return n.c.error(literal, "invalid numeric bound %q", raw)
@@ -279,17 +281,6 @@ func (n *normalizer) lengthBound(op token.Kind, literal ast.NodeID) error {
 	}
 	n.applyLen(op, v)
 	return nil
-}
-
-func (n *normalizer) numericRaw(id ast.NodeID) (string, bool) {
-	id = n.ungroup(id)
-	switch n.c.t.Node(id).Kind() {
-	case ast.Int:
-		return n.c.t.Int(id), true
-	case ast.Float:
-		return n.c.t.Float(id), true
-	}
-	return "", false
 }
 
 func (n *normalizer) applyInt(op token.Kind, v int64) {

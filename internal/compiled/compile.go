@@ -3,7 +3,6 @@ package compiled
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/birdie-ai/katschema/parser/ast"
 	"github.com/birdie-ai/katschema/parser/token"
@@ -90,10 +89,6 @@ func (c *compiler) floatLiteral(id ast.NodeID, raw string) (TypeID, error) {
 		return 0, c.error(id, "invalid number literal %q", raw)
 	}
 	return c.a.internFloat(v), nil
-}
-
-func isIntegerLexeme(s string) bool {
-	return s != "" && !strings.ContainsAny(s, ".eE")
 }
 
 func (c *compiler) array(id ast.NodeID) (TypeID, error) {
