@@ -46,6 +46,11 @@ const (
 	maxInclusive
 )
 
+// NOTE(i4k): DO NOT ADD POINTERS HERE.
+// We use Go struct equality for comparing interned constraints and `enum` field is already
+// problematic because enums are not interned, so two different range32 offsets can
+// actually point to semantically same enum values, breaking the interning, so we
+// empty the enum range before comparing the struct. Check the constraintEqual() function.
 type constraintData struct {
 	flags uint8
 
