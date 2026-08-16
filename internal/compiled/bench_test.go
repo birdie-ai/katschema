@@ -35,6 +35,13 @@ func BenchmarkValidateObject(b *testing.B) {
 		ks.Field("id", ks.Int()),
 		ks.Field("name", ks.String()),
 		ks.Field("email", ks.Optional(ks.String())),
+		ks.Field("age", ks.With(ks.Int(), ks.Check(
+			ks.Binary(
+				ks.X(),
+				ks.Ge,
+				ks.IntExpr(ks.LitInt(18)),
+			),
+		))),
 	))
 	if err != nil {
 		b.Fatal(err)
@@ -44,8 +51,9 @@ func BenchmarkValidateObject(b *testing.B) {
 		b.Fatal(err)
 	}
 	valueTree, valueRoot, err := ks.Build(ks.Object(
-		ks.Field("id", ks.LitInt(137)),
-		ks.Field("name", ks.LitString("Richard")),
+		ks.Field("id", ks.LitInt(67)),
+		ks.Field("name", ks.LitString("Richard Feymann")),
+		ks.Field("age", ks.LitInt(69)),
 	))
 	if err != nil {
 		b.Fatal(err)
