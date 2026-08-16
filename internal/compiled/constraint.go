@@ -250,6 +250,8 @@ func (n *normalizer) compare(left ast.NodeID, op token.Kind, right ast.NodeID) e
 	return n.c.error(left, "constraint comparison must reference x or len(x)")
 }
 
+// equal canonicalize equality checks as enums. THis is great because it composes
+// nicely: (int, x == 1, x == 2) and (int, x IN [1, 2]) are semantically the same.
 func (n *normalizer) equal(left, right ast.NodeID) error {
 	values, err := n.equalityValues(left, right)
 	if err != nil {
@@ -339,20 +341,6 @@ func (n *normalizer) inSet(left, right ast.NodeID) error {
 	}
 
 	n.addEnum(values)
-	return nil
-}
-
-// addEquality canonicalize equality checks as enums. THis is great because it composes
-// nicely: (int, x == 1, x == 2) and (int, x IN [1, 2]) are semantically the same.
-func (n *normalizer) addEquality(id ast.NodeID) error {
-	lit, err := n.literal(id)
-	if err != nil {
-		return err
-	}
-	if !n.c.a.literalCompat(n.base, lit) {
-		return n.c.error(id, "literal is not compatible with %s", n.c.a.Node(n.base).Kind())
-	}
-	n.addEnum([]TypeID{lit})
 	return nil
 }
 
