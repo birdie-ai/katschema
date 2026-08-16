@@ -58,3 +58,19 @@ of requiring an advanced internal representation of the AST.
 The example above covers just the easy aspect of the schema changes, the other questions related
 to "widening" or "narrowing" of schemas are solved by lattices but a canonical representation is
 the basis for having it.
+
+## Type refinements
+
+A refined type is a base type modified through constraints. For example, the type `(int, x > 0)`
+has base type `(int)`. Refined types of same base types share properties that could be exploited
+later when finding commonality, least upper bound and great lower bound of types.
+Only schema types (the ones with `( ... )` syntax *with* constraints are refined.
+
+## Arena interning
+
+Literal values are interned with different strategies but typed values have a fingerpring
+hash computed from its canonical binary encoding, the fingerprint is used to find existing
+candidates for a re-appearing value. It's very unlikely but hash collisions are possible
+and then for correctness we additionally check the node equality in the case of multiple
+nodes sharing the same fingerprint.
+

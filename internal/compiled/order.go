@@ -1,12 +1,25 @@
 package compiled
 
-// Subtype reports whether every value accepted by a is accepted by b.
-// It is the semantic lattice order a <= b. Join/meet are intentionally left
-// for the next layer; this relation is sufficient to establish the ordering.
+// Subtype reports whether every value accepted by a is also accepted by b.
+//
+// This method strictly tell if the property described above holds and
+// under any circunstance it should have special handling for types using any
+// other characteristics of them.
+//
+// It is the semantic lattice order a <= b.
 func (x *Arena) Subtype(a, b TypeID) bool {
+	// NOTE(i4k): basic lattice ordering fundamentals:
+	//   (never) <= literals... <= types... <= ... <= (any)
+
+	// Subtype(a, a) 		 == true because a accepts all a values.
+	// Subtype((never), ...) == true because (never) accepts no value which b also accepts.
+	// Subtype(..., (any))   == true because b accepts everything.
 	if a == b || a == x.neverID || b == x.anyID {
 		return true
 	}
+
+	// Subtype((any), ...)   == false because otherwise the other type is (any) itself.
+	// Subtype(..., (never)) == false because never accepts no value, so accepts none of a values.
 	if a == 0 || b == 0 || a == x.anyID || b == x.neverID {
 		return false
 	}
@@ -135,12 +148,12 @@ func (x *Arena) literalSatisfiesConstraint(lit TypeID, id ConstraintID) bool {
 		n.ints = intBounds{flags: d.intFlags, min: d.intMin, max: d.intMax}
 	}
 	if d.flags&constraintNumber != 0 {
-		n.floats = floatBounds{flags: d.numFlags, min: d.numMin, max: d.numMax}
+		n.floats = floatBounds{flags: d.floatFlags, min: d.numMin, max: d.numMax}
 	}
 	if d.flags&constraintLen != 0 {
-		n.length = lenBounds{flags: d.lenFlags, min: d.lenMin, max: d.lenMax}
+		n.length = intBounds{flags: d.lenFlags, min: d.lenMin, max: d.lenMax}
 	}
-	if !x.literalSatisfiesNorm(lit, n) {
+	if !x.literalSatisfiesNormConstraint(lit, n) {
 		return false
 	}
 	if d.flags&constraintEnum != 0 {
@@ -199,8 +212,8 @@ func intBoundsSubset(a, b constraintData) bool {
 }
 
 func numberBoundsSubset(a, b constraintData) bool {
-	return lowerNumberStronger(a.numFlags, a.numMin, b.numFlags, b.numMin) &&
-		upperNumberStronger(a.numFlags, a.numMax, b.numFlags, b.numMax)
+	return lowerNumberStronger(a.floatFlags, a.numMin, b.floatFlags, b.numMin) &&
+		upperNumberStronger(a.floatFlags, a.numMax, b.floatFlags, b.numMax)
 }
 
 func lenBoundsSubset(a, b constraintData) bool {

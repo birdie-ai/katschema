@@ -84,6 +84,25 @@ func String() Value { return Type("string") }
 
 func X() Expr { return Ident("x") }
 
+// Build builds a synthetic AST under an implicitly created AST arena.
+func Build(v Value) (*ast.Tree, ast.NodeID, error) {
+	tree := ast.New()
+	root, err := Emit(tree, v)
+	if err != nil {
+		return nil, 0, err
+	}
+	return tree, root, nil
+}
+
+// Emit the value into the AST arena t.
+func Emit(t *ast.Tree, v Value) (ast.NodeID, error) {
+	n, err := emitValue(t, v)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func Type(name string) Value {
 	return Value{
 		kind: valueSchema,
@@ -232,16 +251,6 @@ func Binary(left Expr, op Op, right Expr) Expr {
 func Group(x Expr) Expr {
 	xx := x
 	return Expr{kind: exprGroup, x: &xx}
-}
-
-// Build creates a synthetic AST. All source spans are zero.
-func Build(v Value) (*ast.Tree, ast.NodeID, error) {
-	t := ast.New()
-	n, err := emitValue(t, v)
-	if err != nil {
-		return nil, 0, err
-	}
-	return t, n, nil
 }
 
 type valueKind uint8

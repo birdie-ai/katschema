@@ -1,10 +1,18 @@
 package compiled
 
-type TypeID int32
-type StringID int32
-type ConstraintID int32
+type (
+	TypeID       int32
+	StringID     int32
+	ConstraintID int32
+	Kind         uint8
+)
 
-type Kind uint8
+// NOTE(i4k): DO NOT CHANGE the order of the kind consts below lightly because it affects
+// the partial ordering of types. Check [Arena.compareLiteral].
+// It does not mean it cannot be changed but just that doing that will canonicalize
+// constraints like enums (and possibly others) differently and this could be catastrophic
+// if the compiled semantic AST is being saved/restored (not done now, maybe never, probably
+// a dumb idea but who knows what the future brings to this project).
 
 const (
 	Invalid Kind = iota
@@ -89,37 +97,3 @@ type refinement struct {
 	base       TypeID
 	constraint ConstraintID
 }
-
-type boundFlags uint8
-
-const (
-	hasMin boundFlags = 1 << iota
-	minInclusive
-	hasMax
-	maxInclusive
-)
-
-type constraintData struct {
-	flags uint8
-
-	intFlags boundFlags
-	intMin   int64
-	intMax   int64
-
-	numFlags boundFlags
-	numMin   float64
-	numMax   float64
-
-	lenFlags boundFlags
-	lenMin   int64
-	lenMax   int64
-
-	enum range32
-}
-
-const (
-	constraintInt uint8 = 1 << iota
-	constraintNumber
-	constraintLen
-	constraintEnum
-)

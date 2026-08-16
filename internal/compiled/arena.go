@@ -163,10 +163,11 @@ func (a *Arena) internSimple(k Kind) TypeID {
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(k))
 	fp := a.hash(a.scratch)
-	if id := a.find(fp, func(id TypeID) bool {
+	id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
 		return n.kind == k && n.data == 0
-	}); id != 0 {
+	})
+	if id != 0 {
 		return id
 	}
 	return a.appendNode(Node{kind: k}, fp, a.hashHead[fp])
@@ -192,7 +193,7 @@ func (a *Arena) internBool(v bool) TypeID {
 func (a *Arena) internInt(v int64) TypeID {
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(IntLit))
-	a.scratch = appendInt64(a.scratch, v)
+	a.scratch = put64(a.scratch, v)
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
@@ -209,7 +210,7 @@ func (a *Arena) internFloat(v float64) TypeID {
 	v = canonicalFloat(v)
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(FloatLit))
-	a.scratch = appendFloat64(a.scratch, v)
+	a.scratch = putf64(a.scratch, v)
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
@@ -226,7 +227,7 @@ func (a *Arena) internStringLit(s string) TypeID {
 	name := a.internString(s)
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(StringLit))
-	a.scratch = appendString(a.scratch, s)
+	a.scratch = putstr(a.scratch, s)
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
@@ -240,7 +241,7 @@ func (a *Arena) internStringLit(s string) TypeID {
 func (a *Arena) internList(elem TypeID) TypeID {
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(List))
-	a.scratch = appendUint64(a.scratch, a.Fingerprint(elem))
+	a.scratch = putu64(a.scratch, a.Fingerprint(elem))
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
@@ -254,9 +255,9 @@ func (a *Arena) internList(elem TypeID) TypeID {
 func (a *Arena) internTuple(elems []TypeID) TypeID {
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(Tuple))
-	a.scratch = appendInt32(a.scratch, int32(len(elems)))
+	a.scratch = put32(a.scratch, int32(len(elems)))
 	for _, id := range elems {
-		a.scratch = appendUint64(a.scratch, a.Fingerprint(id))
+		a.scratch = putu64(a.scratch, a.Fingerprint(id))
 	}
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
@@ -283,11 +284,11 @@ func (a *Arena) internObject(fields []Field) TypeID {
 
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(Object))
-	a.scratch = appendInt32(a.scratch, int32(len(fields)))
+	a.scratch = put32(a.scratch, int32(len(fields)))
 	for _, f := range fields {
-		a.scratch = appendString(a.scratch, a.StringValue(f.Name))
+		a.scratch = putstr(a.scratch, a.StringValue(f.Name))
 		a.scratch = append(a.scratch, byte(f.Flags))
-		a.scratch = appendUint64(a.scratch, a.Fingerprint(f.Type))
+		a.scratch = putu64(a.scratch, a.Fingerprint(f.Type))
 	}
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
@@ -313,8 +314,8 @@ func (a *Arena) internRefined(base TypeID, c ConstraintID) TypeID {
 	}
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(Refined))
-	a.scratch = appendUint64(a.scratch, a.Fingerprint(base))
-	a.scratch = appendUint64(a.scratch, a.constraintFingerprint(c))
+	a.scratch = putu64(a.scratch, a.Fingerprint(base))
+	a.scratch = putu64(a.scratch, a.constraintFingerprint(c))
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]

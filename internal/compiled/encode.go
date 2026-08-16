@@ -11,27 +11,29 @@ const encodingVersion byte = 1
 
 func sum64(p []byte) uint64 { return xxhash.Sum64(p) }
 
-func appendInt32(p []byte, v int32) []byte {
+func put32(p []byte, v int32) []byte {
 	return binary.LittleEndian.AppendUint32(p, uint32(v))
 }
 
-func appendInt64(p []byte, v int64) []byte {
+func put64(p []byte, v int64) []byte {
 	return binary.LittleEndian.AppendUint64(p, uint64(v))
 }
 
-func appendUint64(p []byte, v uint64) []byte {
+func putu64(p []byte, v uint64) []byte {
 	return binary.LittleEndian.AppendUint64(p, v)
 }
 
-func appendFloat64(p []byte, v float64) []byte {
-	return appendUint64(p, math.Float64bits(canonicalFloat(v)))
+func putf64(p []byte, v float64) []byte {
+	return putu64(p, math.Float64bits(canonicalFloat(v)))
 }
 
-func appendString(p []byte, s string) []byte {
-	p = appendInt32(p, int32(len(s)))
+func putstr(p []byte, s string) []byte {
+	p = put32(p, int32(len(s)))
 	return append(p, s...)
 }
 
+// this function is weird but it canonicalize as +0 in the case of -0.
+// TODO(i4k): should we normalize NaNs?
 func canonicalFloat(v float64) float64 {
 	if v == 0 {
 		return 0

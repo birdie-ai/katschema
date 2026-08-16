@@ -153,7 +153,7 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 	}
 	if d.flags&constraintNumber != 0 {
 		v, ok := astFloat64(t, value)
-		if !ok || !checkNumberBounds(v, d.numFlags, d.numMin, d.numMax) {
+		if !ok || !checkFloatBounds(v, d.floatFlags, d.numMin, d.numMax) {
 			return false
 		}
 	}
@@ -169,7 +169,7 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 		default:
 			return false
 		}
-		if !checkLenBounds(l, d.lenFlags, d.lenMin, d.lenMax) {
+		if !checkIntBounds(l, d.lenFlags, d.lenMin, d.lenMax) {
 			return false
 		}
 	}

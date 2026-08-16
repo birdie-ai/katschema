@@ -22,26 +22,63 @@ type floatBounds struct {
 	max   float64
 }
 
-type lenBounds struct {
-	flags boundFlags
-	min   int64
-	max   int64
-}
-
 type normConstraint struct {
 	ints   intBounds
 	floats floatBounds
-	length lenBounds
+	length intBounds
 	enum   []TypeID // nil means no enum restriction; empty non-nil means impossible.
 }
 
-func (c *compiler) normalizeConstraints(base TypeID, clauses []ast.NodeID) (ConstraintID, bool, error) {
+// NOTE(i4k): using bound flags to avoid dealing with ambiguities when using the same type
+// data constraint type.
+
+// NOTE(i4k): minInclusive and maxInclusive was designed to be used by all numeric types but
+// design was broken because for discrete types like integers we can normalize all bounds to
+// inclusive with huge benefits. A Len constraint is also discrete, so in the end inclusivity
+// flags only matter to real numbers.
+
+type boundFlags uint8
+
+const (
+	hasMin boundFlags = 1 << iota
+	minInclusive
+	hasMax
+	maxInclusive
+)
+
+type constraintData struct {
+	flags uint8
+
+	intFlags boundFlags
+	intMin   int64
+	intMax   int64
+
+	floatFlags boundFlags
+	numMin     float64
+	numMax     float64
+
+	lenFlags boundFlags
+	lenMin   int64
+	lenMax   int64
+
+	enum range32
+}
+
+const (
+	constraintInt uint8 = 1 << iota
+	constraintNumber
+	constraintLen
+	constraintEnum
+)
+
+func (c *compiler) normalizeConstraints(base TypeID, clauses []ast.NodeID) (ct ConstraintID, impossible bool, err error) {
 	n := normalizer{c: c, base: base}
 	for _, id := range clauses {
 		if c.t.Node(id).Kind() != ast.Constraint {
 			continue
 		}
-		if err := n.consume(c.t.Constraint(id)); err != nil {
+		err := n.consume(c.t.Constraint(id))
+		if err != nil {
 			return 0, false, err
 		}
 	}
@@ -49,9 +86,10 @@ func (c *compiler) normalizeConstraints(base TypeID, clauses []ast.NodeID) (Cons
 }
 
 type normalizer struct {
-	c    *compiler
-	base TypeID
-	n    normConstraint
+	c          *compiler
+	base       TypeID
+	n          normConstraint
+	impossible bool
 }
 
 func (n *normalizer) consume(id ast.NodeID) error {
@@ -63,14 +101,27 @@ func (n *normalizer) consume(id ast.NodeID) error {
 
 	b := n.c.t.Binary(id)
 	if b.Op == token.And {
+		// C1 && C2
 		if err := n.consume(b.Left); err != nil {
 			return err
 		}
 		return n.consume(b.Right)
 	}
 
+	// TODO(i4k): I know this is not complete but enough for now.
+	// Here we normalize binary OR branches only into ENUMs but this is incomplete as we can
+	// have OR of arbitrary predicates.
+	if b.Op == token.Or {
+		enum, err := n.consumeEnumOr(id)
+		if err != nil {
+			return err
+		}
+		n.addEnum(enum)
+		return nil
+	}
+
 	if isRangeOp(b.Op) {
-		values, ops := n.flattenOrder(id)
+		values, ops := n.flattenOrder(b)
 		if len(ops) > 1 {
 			for i, op := range ops {
 				if err := n.compare(values[i], op, values[i+1]); err != nil {
@@ -91,6 +142,43 @@ func (n *normalizer) consume(id ast.NodeID) error {
 	return n.c.error(id, "unsupported constraint operator %s", b.Op)
 }
 
+func (n *normalizer) consumeEnumOr(id ast.NodeID) ([]TypeID, error) {
+	id = n.ungroup(id)
+	if n.c.t.Node(id).Kind() != ast.Binary {
+		return nil, n.c.error(id, "unsupported expression in OR constraint")
+	}
+
+	b := n.c.t.Binary(id)
+	if b.Op == token.Or {
+		left, err := n.consumeEnumOr(b.Left)
+		if err != nil {
+			return nil, err
+		}
+
+		right, err := n.consumeEnumOr(b.Right)
+		if err != nil {
+			return nil, err
+		}
+
+		left = append(left, right...)
+		return n.c.a.sortUniqueTypes(left), nil
+	}
+
+	switch b.Op {
+	case token.Eq:
+		return n.equalityValues(b.Left, b.Right)
+
+	case token.In:
+		return n.inValues(b.Left, b.Right)
+	}
+
+	return nil, n.c.error(
+		id,
+		"OR currently requires equality or in constraints",
+	)
+}
+
+// TODO(i4k): handle nested grouping or reject AST with reduntant groups.
 func (n *normalizer) ungroup(id ast.NodeID) ast.NodeID {
 	for n.c.t.Node(id).Kind() == ast.Group {
 		id = n.c.t.Group(id)
@@ -120,14 +208,23 @@ func invertOrder(op token.Kind) token.Kind {
 	return op
 }
 
-func (n *normalizer) flattenOrder(id ast.NodeID) ([]ast.NodeID, []token.Kind) {
-	id = n.ungroup(id)
-	b := n.c.t.Binary(id)
+// NOTE(i4k): this could seem complex but it's actually quite simple.
+// it transforms: (int, ((0 <= x) <= 100)) ==> (int, 0 <= x <= 100)
+// for the case above it returns: values=[0, x, 100], ops=[<=, <=]
+// then later (check the compare() function) we check:
+//
+//	values[i] ops[i] values[i+1]
+//
+// materializing the checks:
+//
+//	0 <= x
+//	x <= 100
+func (n *normalizer) flattenOrder(b ast.BinaryData) ([]ast.NodeID, []token.Kind) {
 	left := n.ungroup(b.Left)
 	if n.c.t.Node(left).Kind() == ast.Binary {
 		lb := n.c.t.Binary(left)
 		if isRangeOp(lb.Op) {
-			values, ops := n.flattenOrder(left)
+			values, ops := n.flattenOrder(lb)
 			return append(values, b.Right), append(ops, b.Op)
 		}
 	}
@@ -154,49 +251,105 @@ func (n *normalizer) compare(left ast.NodeID, op token.Kind, right ast.NodeID) e
 }
 
 func (n *normalizer) equal(left, right ast.NodeID) error {
-	left = n.ungroup(left)
-	right = n.ungroup(right)
-	if n.isX(left) {
-		return n.addEquality(right)
+	values, err := n.equalityValues(left, right)
+	if err != nil {
+		return err
 	}
-	if n.isX(right) {
-		return n.addEquality(left)
-	}
-	return n.c.error(left, "equality constraint must compare x with a literal")
+
+	n.addEnum(values)
+	return nil
 }
 
-func (n *normalizer) inSet(left, right ast.NodeID) error {
+func (n *normalizer) equalityValues(left, right ast.NodeID) ([]TypeID, error) {
 	left = n.ungroup(left)
 	right = n.ungroup(right)
-	if !n.isX(left) {
-		return n.c.error(left, "left side of IN must be x")
+
+	var id ast.NodeID
+
+	switch {
+	case n.isX(left):
+		id = right
+	case n.isX(right):
+		id = left
+	default:
+		return nil, n.c.error(
+			left,
+			"equality constraint must compare x with a literal",
+		)
 	}
+
+	lit, err := n.literal(id)
+	if err != nil {
+		return nil, err
+	}
+
+	if !n.c.a.literalCompat(n.base, lit) {
+		return nil, n.c.error(
+			id,
+			"literal is not compatible with %s",
+			n.c.a.Node(n.base).Kind(),
+		)
+	}
+
+	return []TypeID{lit}, nil
+}
+
+func (n *normalizer) inValues(left, right ast.NodeID) ([]TypeID, error) {
+	left = n.ungroup(left)
+	right = n.ungroup(right)
+
+	if !n.isX(left) {
+		return nil, n.c.error(left, "left side of in must be x")
+	}
+
 	if n.c.t.Node(right).Kind() != ast.List {
-		return n.c.error(right, "right side of IN must be a literal list")
+		return nil, n.c.error(
+			right,
+			"right side of in must be a literal array",
+		)
 	}
 
 	values := n.c.t.List(right)
 	enum := make([]TypeID, 0, len(values))
+
 	for _, v := range values {
 		id, err := n.literal(v)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if !n.c.a.literalCompatible(n.base, id) {
-			return n.c.error(v, "enum literal is not compatible with %s", n.c.a.Node(n.base).Kind())
+
+		if !n.c.a.literalCompat(n.base, id) {
+			return nil, n.c.error(
+				v,
+				"enum literal is not compatible with %s",
+				n.c.a.Node(n.base).Kind(),
+			)
 		}
+
 		enum = append(enum, id)
 	}
-	n.addEnum(enum)
+
+	return n.c.a.sortUniqueTypes(enum), nil
+}
+
+func (n *normalizer) inSet(left, right ast.NodeID) error {
+	values, err := n.inValues(left, right)
+	if err != nil {
+		return err
+	}
+
+	n.addEnum(values)
 	return nil
 }
 
+// addEquality canonicalize equality checks as enums. THis is great because it composes
+// nicely: (int, x == 1, x == 2) and (int, x IN [1, 2]) are semantically the same.
 func (n *normalizer) addEquality(id ast.NodeID) error {
 	lit, err := n.literal(id)
 	if err != nil {
 		return err
 	}
-	if !n.c.a.literalCompatible(n.base, lit) {
+	if !n.c.a.literalCompat(n.base, lit) {
 		return n.c.error(id, "literal is not compatible with %s", n.c.a.Node(n.base).Kind())
 	}
 	n.addEnum([]TypeID{lit})
@@ -256,7 +409,7 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 		if err != nil {
 			return n.c.error(literal, "invalid numeric bound %q", raw)
 		}
-		n.applyNumber(op, canonicalFloat(v))
+		n.applyFloat(op, canonicalFloat(v))
 		return nil
 	default:
 		return n.c.error(literal, "numeric comparison is invalid for %s", kind)
@@ -284,37 +437,54 @@ func (n *normalizer) lengthBound(op token.Kind, literal ast.NodeID) error {
 }
 
 func (n *normalizer) applyInt(op token.Kind, v int64) {
+	// NOTE(i4k): integers are discrete so we can normalize:
+	//   (int, x > 0)   -> (int, x >= 1)
+	//   (int, x < 100) -> (int, x <= 99)
+	// and then internally they are all inclusive bounds.
+	switch op {
+	case token.Gt:
+		if v == math.MaxInt64 {
+			n.impossible = true
+			return
+		}
+		v++
+		op = token.Ge
+	case token.Lt:
+		if v == math.MinInt64 {
+			n.impossible = true
+			return
+		}
+		v--
+		op = token.Le
+	}
+
 	r := &n.n.ints
 	switch op {
-	case token.Gt, token.Ge:
-		inclusive := op == token.Ge
-		if r.flags&hasMin == 0 || v > r.min || v == r.min && !inclusive && r.flags&minInclusive != 0 {
+	case token.Ge:
+		if r.flags&hasMin == 0 || v > r.min {
 			r.min = v
 			r.flags |= hasMin
-			if inclusive {
-				r.flags |= minInclusive
-			} else {
-				r.flags &^= minInclusive
-			}
 		}
-	case token.Lt, token.Le:
-		inclusive := op == token.Le
-		if r.flags&hasMax == 0 || v < r.max || v == r.max && !inclusive && r.flags&maxInclusive != 0 {
+	case token.Le:
+		if r.flags&hasMax == 0 || v < r.max {
 			r.max = v
 			r.flags |= hasMax
-			if inclusive {
-				r.flags |= maxInclusive
-			} else {
-				r.flags &^= maxInclusive
-			}
 		}
 	}
 }
 
-func (n *normalizer) applyNumber(op token.Kind, v float64) {
+func (n *normalizer) applyFloat(op token.Kind, v float64) {
 	r := &n.n.floats
 	switch op {
+	default:
+		panic(op)
 	case token.Gt, token.Ge:
+		// NOTE(i4k): the complex branch below set the minimum value.
+		//   - If a minimum is already set, update it only when it's more restrictive.
+		//   - If r.min == v then update only if when changing from inclusive bound to exclusive.
+		// I'm tempted to change this to boolean switch cases with fallthroughs.
+		// It's hard to abstract this in a function without obscuring what it does.
+
 		inclusive := op == token.Ge
 		if r.flags&hasMin == 0 || v > r.min || v == r.min && !inclusive && r.flags&minInclusive != 0 {
 			r.min = v
@@ -340,29 +510,33 @@ func (n *normalizer) applyNumber(op token.Kind, v float64) {
 }
 
 func (n *normalizer) applyLen(op token.Kind, v int64) {
+	switch op {
+	case token.Gt:
+		if v == math.MaxInt64 {
+			n.impossible = true
+			return
+		}
+		v++
+		op = token.Ge
+	case token.Lt:
+		if v == math.MinInt64 {
+			n.impossible = true
+			return
+		}
+		v--
+		op = token.Le
+	}
 	r := &n.n.length
 	switch op {
-	case token.Gt, token.Ge:
-		inclusive := op == token.Ge
-		if r.flags&hasMin == 0 || v > r.min || v == r.min && !inclusive && r.flags&minInclusive != 0 {
+	case token.Ge:
+		if r.flags&hasMin == 0 || v > r.min {
 			r.min = v
 			r.flags |= hasMin
-			if inclusive {
-				r.flags |= minInclusive
-			} else {
-				r.flags &^= minInclusive
-			}
 		}
-	case token.Lt, token.Le:
-		inclusive := op == token.Le
-		if r.flags&hasMax == 0 || v < r.max || v == r.max && !inclusive && r.flags&maxInclusive != 0 {
+	case token.Le:
+		if r.flags&hasMax == 0 || v < r.max {
 			r.max = v
 			r.flags |= hasMax
-			if inclusive {
-				r.flags |= maxInclusive
-			} else {
-				r.flags &^= maxInclusive
-			}
 		}
 	}
 }
@@ -392,8 +566,11 @@ func (n *normalizer) addEnum(v []TypeID) {
 	n.n.enum = out
 }
 
-func (n *normalizer) finish() (ConstraintID, bool, error) {
-	if contradictoryInt(n.n.ints) || contradictoryNumber(n.n.floats) || contradictoryLen(n.n.length) {
+func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
+	if n.impossible {
+		return 0, true, nil
+	}
+	if impossibleIntBounds(n.n.ints) || impossibleFloatBounds(n.n.floats) || impossibleIntBounds(n.n.length) {
 		return 0, true, nil
 	}
 
@@ -401,12 +578,13 @@ func (n *normalizer) finish() (ConstraintID, bool, error) {
 	if n.n.enum == nil {
 		switch kind {
 		case Int:
-			if singletonInt(n.n.ints) {
+			if singleInt(n.n.ints) {
 				n.n.enum = []TypeID{n.c.a.internInt(n.n.ints.min)}
 				n.n.ints = intBounds{}
 			}
 		case Float:
-			if singletonNumber(n.n.floats) {
+			// TODO(i4k): binary equality of floats for now...
+			if singleFloat(n.n.floats) {
 				n.n.enum = []TypeID{n.c.a.internFloat(n.n.floats.min)}
 				n.n.floats = floatBounds{}
 			}
@@ -416,7 +594,7 @@ func (n *normalizer) finish() (ConstraintID, bool, error) {
 	if n.n.enum != nil {
 		out := n.n.enum[:0]
 		for _, id := range n.n.enum {
-			if n.c.a.literalSatisfiesNorm(id, n.n) {
+			if n.c.a.literalSatisfiesNormConstraint(id, n.n) {
 				out = append(out, id)
 			}
 		}
@@ -424,11 +602,11 @@ func (n *normalizer) finish() (ConstraintID, bool, error) {
 		if len(out) == 0 {
 			return 0, true, nil
 		}
-		// Once the finite set has been filtered, the other restrictions are
-		// redundant and would only create multiple encodings for the same set.
+		// NOTE(i4k): Once schema has enums the other restrictions are redundant.
+		// We can check for clauses conflicting with the enums later and fail in such cases.
 		n.n.ints = intBounds{}
 		n.n.floats = floatBounds{}
-		n.n.length = lenBounds{}
+		n.n.length = intBounds{}
 	}
 
 	if n.n.ints.flags == 0 && n.n.floats.flags == 0 && n.n.length.flags == 0 && n.n.enum == nil {
@@ -437,7 +615,14 @@ func (n *normalizer) finish() (ConstraintID, bool, error) {
 	return n.c.a.internConstraint(n.n), false, nil
 }
 
-func contradictoryInt(r intBounds) bool {
+func impossibleIntBounds(r intBounds) bool {
+	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
+		return false
+	}
+	return r.min > r.max
+}
+
+func impossibleFloatBounds(r floatBounds) bool {
 	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
 		return false
 	}
@@ -447,31 +632,11 @@ func contradictoryInt(r intBounds) bool {
 	return r.min == r.max && (r.flags&minInclusive == 0 || r.flags&maxInclusive == 0)
 }
 
-func contradictoryNumber(r floatBounds) bool {
-	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
-		return false
-	}
-	if r.min > r.max {
-		return true
-	}
-	return r.min == r.max && (r.flags&minInclusive == 0 || r.flags&maxInclusive == 0)
+func singleInt(r intBounds) bool {
+	return r.flags&(hasMin|hasMax) == hasMin|hasMax && r.min == r.max
 }
 
-func contradictoryLen(r lenBounds) bool {
-	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
-		return false
-	}
-	if r.min > r.max {
-		return true
-	}
-	return r.min == r.max && (r.flags&minInclusive == 0 || r.flags&maxInclusive == 0)
-}
-
-func singletonInt(r intBounds) bool {
-	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && r.min == r.max
-}
-
-func singletonNumber(r floatBounds) bool {
+func singleFloat(r floatBounds) bool {
 	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && r.min == r.max
 }
 
@@ -480,24 +645,24 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 	a.scratch = append(a.scratch, encodingVersion, 0xc1)
 	if n.ints.flags != 0 {
 		a.scratch = append(a.scratch, constraintInt, byte(n.ints.flags))
-		a.scratch = appendInt64(a.scratch, n.ints.min)
-		a.scratch = appendInt64(a.scratch, n.ints.max)
+		a.scratch = put64(a.scratch, n.ints.min)
+		a.scratch = put64(a.scratch, n.ints.max)
 	}
 	if n.floats.flags != 0 {
 		a.scratch = append(a.scratch, constraintNumber, byte(n.floats.flags))
-		a.scratch = appendFloat64(a.scratch, n.floats.min)
-		a.scratch = appendFloat64(a.scratch, n.floats.max)
+		a.scratch = putf64(a.scratch, n.floats.min)
+		a.scratch = putf64(a.scratch, n.floats.max)
 	}
 	if n.length.flags != 0 {
 		a.scratch = append(a.scratch, constraintLen, byte(n.length.flags))
-		a.scratch = appendInt64(a.scratch, n.length.min)
-		a.scratch = appendInt64(a.scratch, n.length.max)
+		a.scratch = put64(a.scratch, n.length.min)
+		a.scratch = put64(a.scratch, n.length.max)
 	}
 	if n.enum != nil {
 		a.scratch = append(a.scratch, constraintEnum)
-		a.scratch = appendInt32(a.scratch, int32(len(n.enum)))
+		a.scratch = put32(a.scratch, int32(len(n.enum)))
 		for _, id := range n.enum {
-			a.scratch = appendUint64(a.scratch, a.Fingerprint(id))
+			a.scratch = putu64(a.scratch, a.Fingerprint(id))
 		}
 	}
 	fp := a.hash(a.scratch)
@@ -515,7 +680,7 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 	}
 	if n.floats.flags != 0 {
 		d.flags |= constraintNumber
-		d.numFlags, d.numMin, d.numMax = n.floats.flags, n.floats.min, n.floats.max
+		d.floatFlags, d.numMin, d.numMax = n.floats.flags, n.floats.min, n.floats.max
 	}
 	if n.length.flags != 0 {
 		d.flags |= constraintLen
@@ -546,7 +711,7 @@ func (a *Arena) constraintEqual(id ConstraintID, n normConstraint) bool {
 	if n.ints.flags != 0 && (d.intFlags != n.ints.flags || d.intMin != n.ints.min || d.intMax != n.ints.max) {
 		return false
 	}
-	if n.floats.flags != 0 && (d.numFlags != n.floats.flags || !floatEqual(d.numMin, n.floats.min) || !floatEqual(d.numMax, n.floats.max)) {
+	if n.floats.flags != 0 && (d.floatFlags != n.floats.flags || !floatEqual(d.numMin, n.floats.min) || !floatEqual(d.numMax, n.floats.max)) {
 		return false
 	}
 	if n.length.flags != 0 && (d.lenFlags != n.length.flags || d.lenMin != n.length.min || d.lenMax != n.length.max) {
@@ -579,8 +744,9 @@ func (a *Arena) sortUniqueTypes(v []TypeID) []TypeID {
 	return out
 }
 
-// compareLiteral gives finite literal sets an order independent of arena IDs
-// and fingerprints. This matters even when two XXH64 fingerprints collide.
+// compareLiteral gives finite literal sets an order independent of arena IDs and fingerprints.
+// This is used as sorting Less function (see [sort.Interface]) but also when shifting sorted
+// values.
 func (a *Arena) compareLiteral(x, y TypeID) int {
 	xn, yn := a.Node(x), a.Node(y)
 	if xn.kind < yn.kind {
@@ -623,6 +789,8 @@ func (a *Arena) compareLiteral(x, y TypeID) int {
 		if xv > yv {
 			return 1
 		}
+	default:
+		panic(xn.kind)
 	}
 	return 0
 }
@@ -634,7 +802,7 @@ func (a *Arena) baseKind(id TypeID) Kind {
 	return a.Node(id).kind
 }
 
-func (a *Arena) literalCompatible(base, lit TypeID) bool {
+func (a *Arena) literalCompat(base, lit TypeID) bool {
 	bk := a.baseKind(base)
 	lk := a.Node(lit).kind
 	switch bk {
@@ -647,6 +815,12 @@ func (a *Arena) literalCompatible(base, lit TypeID) bool {
 	case Int:
 		return lk == IntLit
 	case Float:
+		// TODO(i4k): not sure if we should allow int here but allowing makes it easier to use...
+		// for context, this is used in several cases.
+		// ex1: (float, x == 3)
+		//      maybe we should require (float, x == 3.0) to be explicit.
+		// ex2: (float, x IN [1, 2])
+		//      maybe we should require (float, x IN [1.0, 2.0])
 		return lk == IntLit || lk == FloatLit
 	case String:
 		return lk == StringLit
@@ -654,7 +828,7 @@ func (a *Arena) literalCompatible(base, lit TypeID) bool {
 	return false
 }
 
-func (a *Arena) literalSatisfiesNorm(id TypeID, n normConstraint) bool {
+func (a *Arena) literalSatisfiesNormConstraint(id TypeID, n normConstraint) bool {
 	node := a.Node(id)
 	if n.ints.flags != 0 {
 		if node.kind != IntLit || !checkIntBounds(a.ints[node.data], n.ints.flags, n.ints.min, n.ints.max) {
@@ -671,7 +845,7 @@ func (a *Arena) literalSatisfiesNorm(id TypeID, n normConstraint) bool {
 		default:
 			return false
 		}
-		if !checkNumberBounds(v, n.floats.flags, n.floats.min, n.floats.max) {
+		if !checkFloatBounds(v, n.floats.flags, n.floats.min, n.floats.max) {
 			return false
 		}
 	}
@@ -680,7 +854,7 @@ func (a *Arena) literalSatisfiesNorm(id TypeID, n normConstraint) bool {
 			return false
 		}
 		l := int64(utf8.RuneCountInString(a.StringValue(StringID(node.data))))
-		if !checkLenBounds(l, n.length.flags, n.length.min, n.length.max) {
+		if !checkIntBounds(l, n.length.flags, n.length.min, n.length.max) {
 			return false
 		}
 	}
@@ -689,36 +863,22 @@ func (a *Arena) literalSatisfiesNorm(id TypeID, n normConstraint) bool {
 
 func checkIntBounds(v int64, flags boundFlags, minv, maxv int64) bool {
 	if flags&hasMin != 0 {
-		if v < minv || v == minv && flags&minInclusive == 0 {
+		if v < minv {
 			return false
 		}
 	}
 	if flags&hasMax != 0 {
-		if v > maxv || v == maxv && flags&maxInclusive == 0 {
+		if v > maxv {
 			return false
 		}
 	}
 	return true
 }
 
-func checkNumberBounds(v float64, flags boundFlags, minv, maxv float64) bool {
+func checkFloatBounds(v float64, flags boundFlags, minv, maxv float64) bool {
 	if math.IsNaN(v) {
 		return false
 	}
-	if flags&hasMin != 0 {
-		if v < minv || v == minv && flags&minInclusive == 0 {
-			return false
-		}
-	}
-	if flags&hasMax != 0 {
-		if v > maxv || v == maxv && flags&maxInclusive == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func checkLenBounds(v int64, flags boundFlags, minv, maxv int64) bool {
 	if flags&hasMin != 0 {
 		if v < minv || v == minv && flags&minInclusive == 0 {
 			return false

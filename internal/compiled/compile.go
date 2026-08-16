@@ -63,7 +63,7 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 	case ast.String:
 		return c.a.internStringLit(c.t.String(id)), false, nil
 	case ast.List:
-		t, err := c.array(id)
+		t, err := c.list(id)
 		return t, false, err
 	case ast.Object:
 		t, err := c.object(id)
@@ -91,7 +91,7 @@ func (c *compiler) floatLiteral(id ast.NodeID, raw string) (TypeID, error) {
 	return c.a.internFloat(v), nil
 }
 
-func (c *compiler) array(id ast.NodeID) (TypeID, error) {
+func (c *compiler) list(id ast.NodeID) (TypeID, error) {
 	elems := c.t.List(id)
 	if len(elems) == 1 && c.hasSchemaSyntax(elems[0]) {
 		elem, optional, err := c.value(elems[0], false)
