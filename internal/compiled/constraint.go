@@ -66,7 +66,7 @@ type constraintData struct {
 
 const (
 	constraintInt uint8 = 1 << iota
-	constraintNumber
+	constraintFloat
 	constraintLen
 	constraintEnum
 )
@@ -637,7 +637,7 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 		a.scratch = put64(a.scratch, n.ints.max)
 	}
 	if n.floats.flags != 0 {
-		a.scratch = append(a.scratch, constraintNumber, byte(n.floats.flags))
+		a.scratch = append(a.scratch, constraintFloat, byte(n.floats.flags))
 		a.scratch = putf64(a.scratch, n.floats.min)
 		a.scratch = putf64(a.scratch, n.floats.max)
 	}
@@ -661,19 +661,7 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 		}
 	}
 
-	d := constraintData{}
-	if n.ints.flags != 0 {
-		d.flags |= constraintInt
-		d.intFlags, d.intMin, d.intMax = n.ints.flags, n.ints.min, n.ints.max
-	}
-	if n.floats.flags != 0 {
-		d.flags |= constraintNumber
-		d.floatFlags, d.numMin, d.numMax = n.floats.flags, n.floats.min, n.floats.max
-	}
-	if n.length.flags != 0 {
-		d.flags |= constraintLen
-		d.lenFlags, d.lenMin, d.lenMax = n.length.flags, n.length.min, n.length.max
-	}
+	d := constraintDataFromNorm(n)
 	if n.enum != nil {
 		d.flags |= constraintEnum
 		d.enum = range32{off: int32(len(a.constraintEnums)), len: int32(len(n.enum))}
@@ -688,30 +676,65 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 	return id
 }
 
+// TODO(i4k): this function sucks and it should be as simple as `return a.constraints[i] == n`
+// but that's not possible right now because `d.enum` is a range32 offsets. Maybe we should
+// also intern enums separately and then store an EnumID in the constraintData, then we
+// solve this with Go struct equality.
 func (a *Arena) constraintEqual(id ConstraintID, n normConstraint) bool {
-	d := a.constraints[id]
-	if (d.flags&constraintInt != 0) != (n.ints.flags != 0) ||
-		(d.flags&constraintNumber != 0) != (n.floats.flags != 0) ||
-		(d.flags&constraintLen != 0) != (n.length.flags != 0) ||
-		(d.flags&constraintEnum != 0) != (n.enum != nil) {
+	got := a.constraints[id]
+	want := constraintDataFromNorm(n)
+
+	enum := got.enum
+	got.enum = range32{}
+	want.enum = range32{}
+
+	// NOTE(i4k): HERE BE DRAGONS!
+	// I don't like this but the alternative is also not great. I think ideally we should
+	// intern enums but not a priority now.
+	if got != want {
 		return false
 	}
-	if n.ints.flags != 0 && (d.intFlags != n.ints.flags || d.intMin != n.ints.min || d.intMax != n.ints.max) {
-		return false
+	if n.enum == nil {
+		return true
 	}
-	if n.floats.flags != 0 && (d.floatFlags != n.floats.flags || !floatEqual(d.numMin, n.floats.min) || !floatEqual(d.numMax, n.floats.max)) {
-		return false
+
+	old := a.constraintEnums[enum.off : enum.off+enum.len]
+	return equalTypeIDs(old, n.enum)
+}
+
+func constraintDataFromNorm(n normConstraint) constraintData {
+	var d constraintData
+
+	if n.ints.flags != 0 {
+		d.flags |= constraintInt
+		d.intFlags = n.ints.flags
+		d.intMin = n.ints.min
+		d.intMax = n.ints.max
 	}
-	if n.length.flags != 0 && (d.lenFlags != n.length.flags || d.lenMin != n.length.min || d.lenMax != n.length.max) {
-		return false
+
+	if n.floats.flags != 0 {
+		d.flags |= constraintFloat
+		d.floatFlags = n.floats.flags
+		d.numMin = n.floats.min
+		d.numMax = n.floats.max
 	}
+
+	if n.length.flags != 0 {
+		d.flags |= constraintLen
+		d.lenFlags = n.length.flags
+		d.lenMin = n.length.min
+		d.lenMax = n.length.max
+	}
+
 	if n.enum != nil {
-		old := a.constraintEnums[d.enum.off : d.enum.off+d.enum.len]
-		if !equalTypeIDs(old, n.enum) {
-			return false
-		}
+		d.flags |= constraintEnum
+		// NOTE(i4k): enum intentionally left zero here
+		// this is a hack to avoid a complex equality check!
+		// This only works while the constraintData struct is (mostly pointer free).
+		// Check the constraintEqual() method.
 	}
-	return true
+
+	return d
 }
 
 func (a *Arena) constraintFingerprint(id ConstraintID) uint64 {

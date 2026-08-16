@@ -151,7 +151,7 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 			return false
 		}
 	}
-	if d.flags&constraintNumber != 0 {
+	if d.flags&constraintFloat != 0 {
 		v, ok := astFloat64(t, value)
 		if !ok || !checkFloatBounds(v, d.floatFlags, d.numMin, d.numMax) {
 			return false

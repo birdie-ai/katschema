@@ -147,7 +147,7 @@ func (x *Arena) literalSatisfiesConstraint(lit TypeID, id ConstraintID) bool {
 	if d.flags&constraintInt != 0 {
 		n.ints = intBounds{flags: d.intFlags, min: d.intMin, max: d.intMax}
 	}
-	if d.flags&constraintNumber != 0 {
+	if d.flags&constraintFloat != 0 {
 		n.floats = floatBounds{flags: d.floatFlags, min: d.numMin, max: d.numMax}
 	}
 	if d.flags&constraintLen != 0 {
@@ -193,8 +193,8 @@ func (x *Arena) constraintSubset(a, b ConstraintID) bool {
 			return false
 		}
 	}
-	if bd.flags&constraintNumber != 0 {
-		if ad.flags&constraintNumber == 0 || !numberBoundsSubset(ad, bd) {
+	if bd.flags&constraintFloat != 0 {
+		if ad.flags&constraintFloat == 0 || !numberBoundsSubset(ad, bd) {
 			return false
 		}
 	}
