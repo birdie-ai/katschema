@@ -67,7 +67,7 @@ func TestSubtype(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "objects with same fields but the less constrained is a subtype",
+			name: "narrow object is a subtype",
 			a: ks.Object(
 				ks.Field("a", ks.With(
 					ks.Int(),
@@ -81,6 +81,22 @@ func TestSubtype(t *testing.T) {
 				ks.Field("a", ks.Int()),
 			),
 			want: true,
+		},
+		{
+			name: "wider object is not a subtype",
+			a: ks.Object(
+				ks.Field("a", ks.Int()),
+			),
+			b: ks.Object(
+				ks.Field("a", ks.With(
+					ks.Int(),
+					ks.Check(
+						ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))),
+					),
+				),
+				),
+			),
+			want: false,
 		},
 		{
 			name: "object with less fields is a subtype",
