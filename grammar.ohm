@@ -12,6 +12,7 @@ Katschema {
   Collection =
     Object
     | Array
+	| Tuple
     
   Primitive =
     String
@@ -150,6 +151,10 @@ Katschema {
   Array =
   	"[" Value ("," Value*)* "]" -- nonEmpty
     | "[" "]" -- empty
+
+  Tuple =
+  	"#[" Value ("," Value*)* "]" -- nonEmpty
+    | "#[" "]" -- empty
   
   String (String) =
     stringLiteral
