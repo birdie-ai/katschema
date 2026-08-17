@@ -83,27 +83,26 @@ func TestSubtype(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "wider object is not a subtype",
-			a: ks.Object(
-				ks.Field("a", ks.Int()),
-			),
-			b: ks.Object(
-				ks.Field("a", ks.With(
-					ks.Int(),
-					ks.Check(
-						ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))),
-					),
-				),
-				),
-			),
-			want: false,
-		},
-		{
 			name: "object with less fields is a subtype",
 			a:    ks.Object(ks.Field("a", ks.Int())),
 			b: ks.Object(
 				ks.Field("a", ks.Int()),
 				ks.Field("b", ks.Optional(ks.Int())),
+			),
+			want: true,
+		},
+		{
+			name: "narrow list is a subtype",
+			a: ks.List(ks.With(
+				ks.Int(),
+				ks.Check(
+					ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))),
+				),
+			),
+			),
+			b: ks.List(ks.With(
+				ks.Int(),
+			),
 			),
 			want: true,
 		},
@@ -115,6 +114,12 @@ func TestSubtype(t *testing.T) {
 			b := compileOn(t, arena, tree, tc.b)
 			if got := arena.Subtype(a, b); got != tc.want {
 				t.Fatalf("Subtype(a, b) = %v, want %v", got, tc.want)
+			}
+			if a != b {
+				// we can also check the reverse but only if they are different types.
+				if got := arena.Subtype(b, a); got != !tc.want {
+					t.Fatalf("reversed Subtype(b, a) = %v, want %v", got, !tc.want)
+				}
 			}
 		})
 	}
