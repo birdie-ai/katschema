@@ -212,8 +212,8 @@ func intBoundsSubset(a, b constraintData) bool {
 }
 
 func numberBoundsSubset(a, b constraintData) bool {
-	return lowerNumberStronger(a.floatFlags, a.numMin, b.floatFlags, b.numMin) &&
-		upperNumberStronger(a.floatFlags, a.numMax, b.floatFlags, b.numMax)
+	return lowerFloatStronger(a.floatFlags, a.numMin, b.floatFlags, b.numMin) &&
+		upperFloatStronger(a.floatFlags, a.numMax, b.floatFlags, b.numMax)
 }
 
 func lenBoundsSubset(a, b constraintData) bool {
@@ -228,10 +228,7 @@ func lowerIntStronger(af boundFlags, av int64, bf boundFlags, bv int64) bool {
 	if af&hasMin == 0 || av < bv {
 		return false
 	}
-	if av > bv {
-		return true
-	}
-	return bf&minInclusive != 0 || af&minInclusive == 0
+	return av > bv
 }
 
 func upperIntStronger(af boundFlags, av int64, bf boundFlags, bv int64) bool {
@@ -241,13 +238,10 @@ func upperIntStronger(af boundFlags, av int64, bf boundFlags, bv int64) bool {
 	if af&hasMax == 0 || av > bv {
 		return false
 	}
-	if av < bv {
-		return true
-	}
-	return bf&maxInclusive != 0 || af&maxInclusive == 0
+	return av < bv
 }
 
-func lowerNumberStronger(af boundFlags, av float64, bf boundFlags, bv float64) bool {
+func lowerFloatStronger(af boundFlags, av float64, bf boundFlags, bv float64) bool {
 	if bf&hasMin == 0 {
 		return true
 	}
@@ -260,7 +254,7 @@ func lowerNumberStronger(af boundFlags, av float64, bf boundFlags, bv float64) b
 	return bf&minInclusive != 0 || af&minInclusive == 0
 }
 
-func upperNumberStronger(af boundFlags, av float64, bf boundFlags, bv float64) bool {
+func upperFloatStronger(af boundFlags, av float64, bf boundFlags, bv float64) bool {
 	if bf&hasMax == 0 {
 		return true
 	}
