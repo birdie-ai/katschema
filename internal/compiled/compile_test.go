@@ -118,8 +118,8 @@ func TestConstraintNormalization(t *testing.T) {
 
 	a := NewArena()
 	x := ks.X()
-	zero := ks.IntExpr(ks.LitInt(0))
-	hundred := ks.IntExpr(ks.LitInt(100))
+	zero := ks.IntExpr(0)
+	hundred := ks.IntExpr(100)
 
 	for _, tc := range []testcase{
 		{
@@ -150,7 +150,7 @@ func TestConstraintNormalization(t *testing.T) {
 				// (int, -1 < x <= 100)
 				ks.With(ks.Int(), ks.Check(
 					ks.Binary(
-						ks.Binary(ks.IntExpr(ks.LitInt(-1)), ks.Lt, x),
+						ks.Binary(ks.IntExpr(-1), ks.Lt, x),
 						ks.Le,
 						hundred,
 					)),
@@ -158,9 +158,9 @@ func TestConstraintNormalization(t *testing.T) {
 				// (int, -1 < x < 101)
 				ks.With(ks.Int(), ks.Check(
 					ks.Binary(
-						ks.Binary(ks.IntExpr(ks.LitInt(-1)), ks.Lt, x),
+						ks.Binary(ks.IntExpr(-1), ks.Lt, x),
 						ks.Lt,
-						ks.IntExpr(ks.LitInt(101)),
+						ks.IntExpr(101),
 					)),
 				),
 			},
@@ -213,20 +213,20 @@ func TestConstraintNormalization(t *testing.T) {
 							ks.Binary(
 								ks.X(),
 								ks.Eq,
-								ks.Str("a"),
+								ks.StrExpr("a"),
 							),
 							ks.Or,
 							ks.Binary(
 								ks.X(),
 								ks.Eq,
-								ks.Str("b"),
+								ks.StrExpr("b"),
 							),
 						),
 						ks.Or,
 						ks.Binary(
 							ks.X(),
 							ks.Eq,
-							ks.Str("c"),
+							ks.StrExpr("c"),
 						),
 					),
 				),
@@ -247,16 +247,16 @@ func TestConstraintNormalization(t *testing.T) {
 				ks.With(ks.List(ks.String()),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Ge,
-							ks.IntExpr(ks.LitInt(1)),
+							ks.IntExpr(1),
 						),
 					),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Le,
-							ks.IntExpr(ks.LitInt(100)),
+							ks.IntExpr(100),
 						),
 					),
 				),
@@ -264,16 +264,16 @@ func TestConstraintNormalization(t *testing.T) {
 				ks.With(ks.List(ks.String()),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Gt,
-							ks.IntExpr(ks.LitInt(0)),
+							ks.IntExpr(0),
 						),
 					),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Le,
-							ks.IntExpr(ks.LitInt(100)),
+							ks.IntExpr(100),
 						),
 					),
 				),
@@ -281,16 +281,16 @@ func TestConstraintNormalization(t *testing.T) {
 				ks.With(ks.List(ks.String()),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Gt,
-							ks.IntExpr(ks.LitInt(0)),
+							ks.IntExpr(0),
 						),
 					),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Lt,
-							ks.IntExpr(ks.LitInt(101)),
+							ks.IntExpr(101),
 						),
 					),
 				),
@@ -303,16 +303,16 @@ func TestConstraintNormalization(t *testing.T) {
 				ks.With(ks.List(ks.Object(ks.Field("a", ks.Int()))),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Ge,
-							ks.IntExpr(ks.LitInt(1)),
+							ks.IntExpr(1),
 						),
 					),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Le,
-							ks.IntExpr(ks.LitInt(100)),
+							ks.IntExpr(100),
 						),
 					),
 				),
@@ -320,16 +320,16 @@ func TestConstraintNormalization(t *testing.T) {
 				ks.With(ks.List(ks.Object(ks.Field("a", ks.Int()))),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Gt,
-							ks.IntExpr(ks.LitInt(0)),
+							ks.IntExpr(0),
 						),
 					),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Le,
-							ks.IntExpr(ks.LitInt(100)),
+							ks.IntExpr(100),
 						),
 					),
 				),
@@ -337,16 +337,16 @@ func TestConstraintNormalization(t *testing.T) {
 				ks.With(ks.List(ks.Object(ks.Field("a", ks.Int()))),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Gt,
-							ks.IntExpr(ks.LitInt(0)),
+							ks.IntExpr(0),
 						),
 					),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Lt,
-							ks.IntExpr(ks.LitInt(101)),
+							ks.IntExpr(101),
 						),
 					),
 				),
@@ -361,16 +361,16 @@ func TestConstraintNormalization(t *testing.T) {
 				ks.With(ks.Object(ks.Field("a", ks.Int())),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Ge,
-							ks.IntExpr(ks.LitInt(1)),
+							ks.IntExpr(1),
 						),
 					),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Le,
-							ks.IntExpr(ks.LitInt(100)),
+							ks.IntExpr(100),
 						),
 					),
 				),
@@ -378,16 +378,16 @@ func TestConstraintNormalization(t *testing.T) {
 				ks.With(ks.Object(ks.Field("a", ks.Int())),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Gt,
-							ks.IntExpr(ks.LitInt(0)),
+							ks.IntExpr(0),
 						),
 					),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Le,
-							ks.IntExpr(ks.LitInt(100)),
+							ks.IntExpr(100),
 						),
 					),
 				),
@@ -395,16 +395,16 @@ func TestConstraintNormalization(t *testing.T) {
 				ks.With(ks.Object(ks.Field("a", ks.Int())),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Gt,
-							ks.IntExpr(ks.LitInt(0)),
+							ks.IntExpr(0),
 						),
 					),
 					ks.Check(
 						ks.Binary(
-							ks.Call("len", ks.X()),
+							ks.Funcall("len", ks.X()),
 							ks.Lt,
-							ks.IntExpr(ks.LitInt(101)),
+							ks.IntExpr(101),
 						),
 					),
 				),

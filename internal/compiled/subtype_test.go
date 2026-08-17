@@ -56,14 +56,14 @@ func TestSubtype(t *testing.T) {
 		},
 		{
 			name: "(int, x > 0) smaller than (int)",
-			a:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))))),
+			a:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)))),
 			b:    ks.Int(),
 			want: true,
 		},
 		{
 			name: "(int) is not smaller than (int, x > 0)",
 			a:    ks.Int(),
-			b:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))))),
+			b:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)))),
 			want: false,
 		},
 		{
@@ -72,7 +72,7 @@ func TestSubtype(t *testing.T) {
 				ks.Field("a", ks.With(
 					ks.Int(),
 					ks.Check(
-						ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))),
+						ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)),
 					),
 				),
 				),
@@ -96,7 +96,7 @@ func TestSubtype(t *testing.T) {
 			a: ks.List(ks.With(
 				ks.Int(),
 				ks.Check(
-					ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))),
+					ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)),
 				),
 			),
 			),

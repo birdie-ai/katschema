@@ -18,9 +18,9 @@ func TestValidation(t *testing.T) {
 
 	// (int, 0 <= x <= 100)
 	ranged := ks.Where(ks.Int(), ks.Binary(
-		ks.Binary(ks.IntExpr(ks.LitInt(0)), ks.Le, ks.X()),
+		ks.Binary(ks.IntExpr(0), ks.Le, ks.X()),
 		ks.Le,
-		ks.IntExpr(ks.LitInt(100)),
+		ks.IntExpr(100),
 	))
 
 	for _, tc := range []testcase{
@@ -305,7 +305,7 @@ func TestValidation(t *testing.T) {
 				ks.List(ks.Int()),
 				ks.Check(
 					ks.Binary(
-						ks.Call("len", ks.X()),
+						ks.Funcall("len", ks.X()),
 						ks.Gt,
 						ks.ValueExpr(ks.LitInt(2)),
 					),
@@ -320,7 +320,7 @@ func TestValidation(t *testing.T) {
 				ks.List(ks.Int()),
 				ks.Check(
 					ks.Binary(
-						ks.Call("len", ks.X()),
+						ks.Funcall("len", ks.X()),
 						ks.Gt,
 						ks.ValueExpr(ks.LitInt(2)),
 					),
@@ -342,7 +342,7 @@ func TestValidation(t *testing.T) {
 				),
 				ks.Check(
 					ks.Binary(
-						ks.Call("len", ks.X()),
+						ks.Funcall("len", ks.X()),
 						ks.Gt,
 						ks.ValueExpr(ks.LitInt(2)),
 					),
@@ -364,7 +364,7 @@ func TestValidation(t *testing.T) {
 				),
 				ks.Check(
 					ks.Binary(
-						ks.Call("len", ks.X()),
+						ks.Funcall("len", ks.X()),
 						ks.Gt,
 						ks.ValueExpr(ks.LitInt(2)),
 					),
@@ -379,7 +379,7 @@ func TestValidation(t *testing.T) {
 				ks.List(ks.Int()),
 				ks.Check(
 					ks.Binary(
-						ks.Call("len", ks.X()),
+						ks.Funcall("len", ks.X()),
 						ks.Gt,
 						ks.ValueExpr(ks.LitInt(2)),
 					),

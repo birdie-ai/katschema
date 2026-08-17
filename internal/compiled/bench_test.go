@@ -39,7 +39,7 @@ func BenchmarkValidateObject(b *testing.B) {
 			ks.Binary(
 				ks.X(),
 				ks.Ge,
-				ks.IntExpr(ks.LitInt(18)),
+				ks.IntExpr(18),
 			),
 		))),
 	))

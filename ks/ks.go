@@ -204,36 +204,42 @@ func Ident(name string) Expr {
 	return Expr{kind: exprIdent, name: name}
 }
 
-func ExprPath(parts ...string) Expr {
-	return Expr{kind: exprPath, path: clone(parts)}
-}
-
 func ValueExpr(v Value) Expr {
 	vv := v
 	return Expr{kind: exprValue, v: &vv}
 }
 
-func Str(v string) Expr {
+func ExprPath(parts ...string) Expr {
+	return Expr{kind: exprPath, path: clone(parts)}
+}
+
+// StrExpr returns a string value as an expression.
+func StrExpr(v string) Expr {
 	return ValueExpr(LitString(v))
 }
 
-func Boolean(v bool) Expr {
+// BoolExpr returns a bool value as an expression.
+func BoolExpr(v bool) Expr {
 	return ValueExpr(LitBool(v))
 }
 
+// NullExpr returns a null value as an expression.
 func NullExpr() Expr {
 	return ValueExpr(LitNull())
 }
 
-func IntExpr(v Value) Expr {
-	return ValueExpr(v)
+// IntExpr returns an integer value as an expression.
+func IntExpr(v int64) Expr {
+	return ValueExpr(LitInt(v))
 }
 
+// ListExpr returns a list as an expression.
 func ListExpr(v ...Value) Expr {
 	return ValueExpr(List(v...))
 }
 
-func Call(name string, args ...Expr) Expr {
+// Funcall returns a function call expression.
+func Funcall(name string, args ...Expr) Expr {
 	return Expr{kind: exprCall, name: name, args: clone(args)}
 }
 
