@@ -48,6 +48,49 @@ func TestSubtype(t *testing.T) {
 			b:    ks.Never(),
 			want: false,
 		},
+		{
+			name: "any type is subtype of itself",
+			a:    ks.Int(),
+			b:    ks.Int(),
+			want: true,
+		},
+		{
+			name: "(int, x > 0) smaller than (int)",
+			a:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))))),
+			b:    ks.Int(),
+			want: true,
+		},
+		{
+			name: "(int) is not smaller than (int, x > 0)",
+			a:    ks.Int(),
+			b:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))))),
+			want: false,
+		},
+		{
+			name: "objects with same fields but the less constrained is a subtype",
+			a: ks.Object(
+				ks.Field("a", ks.With(
+					ks.Int(),
+					ks.Check(
+						ks.Binary(ks.X(), ks.Gt, ks.IntExpr(ks.LitInt(0))),
+					),
+				),
+				),
+			),
+			b: ks.Object(
+				ks.Field("a", ks.Int()),
+			),
+			want: true,
+		},
+		{
+			name: "object with less fields is a subtype",
+			a:    ks.Object(ks.Field("a", ks.Int())),
+			b: ks.Object(
+				ks.Field("a", ks.Int()),
+				ks.Field("b", ks.Optional(ks.Int())),
+			),
+			want: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			arena := NewArena()
