@@ -166,6 +166,33 @@ func TestConstraintNormalization(t *testing.T) {
 			},
 		},
 		{
+
+			name: "semantically equal float ranges",
+			cases: []ks.Value{
+				// (float, x >= 0, x <= 100)
+				ks.With(ks.Float(),
+					ks.Check(ks.Binary(x, ks.Ge, ks.FloatExpr(0))),
+					ks.Check(ks.Binary(x, ks.Le, ks.FloatExpr(100))),
+				),
+				// (float, x >= 0 && x <= 100)
+				ks.With(ks.Float(), ks.Check(
+					ks.Binary(
+						ks.Binary(x, ks.Ge, ks.FloatExpr(0)),
+						ks.And,
+						ks.Binary(x, ks.Le, ks.FloatExpr(100)),
+					)),
+				),
+				// (float, 0 <= x <= 100)
+				ks.With(ks.Float(), ks.Check(
+					ks.Binary(
+						ks.Binary(ks.FloatExpr(0), ks.Le, x),
+						ks.Le,
+						ks.FloatExpr(100),
+					)),
+				),
+			},
+		},
+		{
 			name: "semantically equal enums",
 			cases: []ks.Value{
 				// (string, x IN ["a", "b", "c"])

@@ -233,6 +233,11 @@ func IntExpr(v int64) Expr {
 	return ValueExpr(LitInt(v))
 }
 
+// FloatExpr returns an float value as an expression.
+func FloatExpr(v float64) Expr {
+	return ValueExpr(LitFloat(v))
+}
+
 // ListExpr returns a list as an expression.
 func ListExpr(v ...Value) Expr {
 	return ValueExpr(List(v...))
