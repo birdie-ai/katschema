@@ -84,6 +84,25 @@ func String() Value { return Type("string") }
 
 func X() Expr { return Ident("x") }
 
+// Build builds a synthetic AST under an implicitly created AST arena.
+func Build(v Value) (*ast.Tree, ast.NodeID, error) {
+	tree := ast.New()
+	root, err := Emit(tree, v)
+	if err != nil {
+		return nil, 0, err
+	}
+	return tree, root, nil
+}
+
+// Emit the value into the AST arena t.
+func Emit(t *ast.Tree, v Value) (ast.NodeID, error) {
+	n, err := emitValue(t, v)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func Type(name string) Value {
 	return Value{
 		kind: valueSchema,
@@ -185,32 +204,47 @@ func Ident(name string) Expr {
 	return Expr{kind: exprIdent, name: name}
 }
 
-func ExprPath(parts ...string) Expr {
-	return Expr{kind: exprPath, path: clone(parts)}
-}
-
 func ValueExpr(v Value) Expr {
 	vv := v
 	return Expr{kind: exprValue, v: &vv}
 }
 
-func Str(v string) Expr {
+func ExprPath(parts ...string) Expr {
+	return Expr{kind: exprPath, path: clone(parts)}
+}
+
+// StrExpr returns a string value as an expression.
+func StrExpr(v string) Expr {
 	return ValueExpr(LitString(v))
 }
 
-func Boolean(v bool) Expr {
+// BoolExpr returns a bool value as an expression.
+func BoolExpr(v bool) Expr {
 	return ValueExpr(LitBool(v))
 }
 
+// NullExpr returns a null value as an expression.
 func NullExpr() Expr {
 	return ValueExpr(LitNull())
 }
 
+// IntExpr returns an integer value as an expression.
+func IntExpr(v int64) Expr {
+	return ValueExpr(LitInt(v))
+}
+
+// FloatExpr returns an float value as an expression.
+func FloatExpr(v float64) Expr {
+	return ValueExpr(LitFloat(v))
+}
+
+// ListExpr returns a list as an expression.
 func ListExpr(v ...Value) Expr {
 	return ValueExpr(List(v...))
 }
 
-func Call(name string, args ...Expr) Expr {
+// Funcall returns a function call expression.
+func Funcall(name string, args ...Expr) Expr {
 	return Expr{kind: exprCall, name: name, args: clone(args)}
 }
 
@@ -228,16 +262,6 @@ func Binary(left Expr, op Op, right Expr) Expr {
 func Group(x Expr) Expr {
 	xx := x
 	return Expr{kind: exprGroup, x: &xx}
-}
-
-// Build creates a synthetic AST. All source spans are zero.
-func Build(v Value) (*ast.Tree, ast.NodeID, error) {
-	t := ast.New()
-	n, err := emitValue(t, v)
-	if err != nil {
-		return nil, 0, err
-	}
-	return t, n, nil
 }
 
 type valueKind uint8

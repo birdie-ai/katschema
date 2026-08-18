@@ -121,6 +121,13 @@ func TestPrint(t *testing.T) {
 			want: `(uuid)`,
 		},
 		{
+			name: "[(string)]",
+			root: func(a *Tree) NodeID {
+				return a.AddList([]NodeID{a.AddSchema(a.AddName("string", z), nil, z)}, z)
+			},
+			want: `[(string)]`,
+		},
+		{
 			name: "literal integer schema",
 			root: func(a *Tree) NodeID {
 				return a.AddSchema(a.AddInt("1", z), nil, z)
