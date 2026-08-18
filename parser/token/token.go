@@ -81,6 +81,8 @@ const (
 	Mul // *
 	Div // /
 	Mod // %
+
+	Pipe // |
 )
 
 func (k Kind) String() string {
@@ -151,6 +153,8 @@ func (k Kind) String() string {
 		return "/"
 	case Mod:
 		return "%"
+	case Pipe:
+		return "|"
 	}
 	return "ILLEGAL"
 }

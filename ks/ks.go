@@ -159,6 +159,10 @@ func Object(fields ...Member) Value {
 	return Value{kind: valueObject, fields: clone(fields)}
 }
 
+func Sum(elems ...Value) Value {
+	return Value{kind: valueSum, elems: clone(elems)}
+}
+
 // With adds clauses to a value. If the value is already a schema, then it append the
 // provided clauses to the schema otherwise it wraps the value in a literal schema.
 func With(v Value, clauses ...Clause) Value {
@@ -276,6 +280,7 @@ const (
 	valueArray
 	valueObject
 	valueSchema
+	valueSum
 )
 
 type refKind uint8
@@ -358,6 +363,22 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 		return t.AddObject(fields, z), nil
 	case valueSchema:
 		return emitSchema(t, *v.schema)
+	case valueSum:
+		if len(v.elems) < 2 {
+			return 0, fmt.Errorf("ks: sum requires at least two members")
+		}
+		left, err := emitValue(t, v.elems[0])
+		if err != nil {
+			return 0, err
+		}
+		for i := 1; i < len(v.elems); i++ {
+			right, err := emitValue(t, v.elems[i])
+			if err != nil {
+				return 0, err
+			}
+			left = t.AddSum(left, right, z)
+		}
+		return left, nil
 	default:
 		panic(fmt.Errorf("ks: invalid valuekind %v", v.kind))
 	}

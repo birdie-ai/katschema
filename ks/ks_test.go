@@ -101,6 +101,21 @@ func TestDSL(t *testing.T) {
 			root: With(String(), Flag("optional")),
 			want: `(string,optional)`,
 		},
+		{
+			name: "simple sum type",
+			root: Sum(Int(), String()),
+			want: `(int)|(string)`,
+		},
+		{
+			name: "sum of three types",
+			root: Sum(Int(), String(), Float()),
+			want: `(int)|(string)|(float)`,
+		},
+		{
+			name: "sum of four types",
+			root: Sum(Int(), String(), Float(), Bool()),
+			want: `(int)|(string)|(float)|(bool)`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tree, root, err := Build(tc.root)

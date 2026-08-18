@@ -79,6 +79,11 @@ func (p *printer) node(id NodeID) {
 		}
 		p.write(")")
 
+	case Sum:
+		s := p.t.Sum(id)
+		p.node(s.Left)
+		p.write("|")
+		p.node(s.Right)
 	case Name:
 		p.write(p.t.Name(id))
 
