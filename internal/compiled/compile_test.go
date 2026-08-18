@@ -99,6 +99,23 @@ func TestCompileIntern(t *testing.T) {
 			},
 		},
 		{
+			name: "A | A | A => A",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("string", z), nil, z),
+					a.AddSum(
+						a.AddSchema(a.AddName("string", z), nil, z),
+						a.AddSchema(a.AddName("string", z), nil, z),
+						z,
+					),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("string", z), nil, z)
+			},
+		},
+		{
 			name: "A | B | C | A => A | B | C", // redundancy
 			x: func(a *ast.Tree) ast.NodeID {
 				return a.AddSum(
@@ -141,11 +158,70 @@ func TestCompileIntern(t *testing.T) {
 			},
 		},
 		{
+			name: "A | (never) | B => A | B",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("string", z), nil, z),
+					a.AddSum(
+						a.AddSchema(a.AddName("never", z), nil, z),
+						a.AddSchema(a.AddName("int", z), nil, z),
+						z,
+					),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("string", z), nil, z),
+					a.AddSchema(a.AddName("int", z), nil, z),
+					z,
+				)
+			},
+		},
+		{
 			name: "A | (any) => (any)",
 			x: func(a *ast.Tree) ast.NodeID {
 				return a.AddSum(
 					a.AddSchema(a.AddName("string", z), nil, z),
 					a.AddSchema(a.AddName("any", z), nil, z),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("any", z), nil, z)
+			},
+		},
+		{
+			name: "A | (any) | B => (any)",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("string", z), nil, z),
+					a.AddSum(
+						a.AddSchema(a.AddName("any", z), nil, z),
+						a.AddSchema(a.AddName("int", z), nil, z),
+						z,
+					),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("any", z), nil, z)
+			},
+		},
+		{
+			name: "(any) | A | (any) | B => (any)",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("any", z), nil, z),
+					a.AddSum(
+						a.AddSchema(a.AddName("int", z), nil, z),
+						a.AddSum(
+							a.AddSchema(a.AddName("any", z), nil, z),
+							a.AddSchema(a.AddName("string", z), nil, z),
+							z,
+						),
+						z,
+					),
 					z,
 				)
 			},
