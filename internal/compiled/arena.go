@@ -22,6 +22,7 @@ type Arena struct {
 	tuples  []range32
 	objects []range32
 	fields  []Field
+	sums    []range32
 
 	ints    []int64
 	numbers []float64
@@ -308,6 +309,143 @@ func (a *Arena) internObject(fields []Field) TypeID {
 	return a.appendNode(Node{kind: Object, data: i}, fp, a.hashHead[fp])
 }
 
+func (a *Arena) internSum(members [2]TypeID) TypeID {
+	// NOTE(i4k): aggressively intern sum types.
+	// Below are the interning rules:
+	//   1.  A | A			=> A
+	//   2.  A | never		=> A
+	//   3.  A | any		=> any
+	//   4.  A | B			=> B	iff A <= B
+	//   5.  A | B			=> A	iff B <= A
+	//
+	// special cases:
+	//   6.  true | false		=> (bool)
+	//   7.  (A, C1) | (A, C2)	=> (A, C1 || C2)
+	//
+	// TODO(i4k): implement 7.
+
+	flat := make([]TypeID, 0, 8)
+
+	var add func(TypeID)
+	// flat the binary tree and handle cases 2 and 3.
+	add = func(id TypeID) {
+		switch id {
+		case 0, a.neverID:
+			return
+		case a.anyID:
+			flat = flat[:0]
+			flat = append(flat, a.anyID)
+			return
+		}
+		n := a.Node(id)
+		if n.kind == Sum {
+			for _, member := range a.sum(id) {
+				add(member)
+				if len(flat) == 1 && flat[0] == a.anyID {
+					return
+				}
+			}
+			return
+		}
+		flat = append(flat, id)
+	}
+
+	add(members[0])
+	add(members[1])
+
+	switch len(flat) {
+	case 0:
+		return a.neverID
+	case 1:
+		return flat[0]
+	}
+
+	var hasTrue, hasFalse bool
+	for _, id := range flat {
+		n := a.Node(id)
+		if n.kind != BoolLit {
+			continue
+		}
+		if n.data != 0 {
+			hasTrue = true
+		} else {
+			hasFalse = true
+		}
+	}
+
+	// handle case 6.
+	if hasTrue && hasFalse {
+		out := flat[:0] // reuse flat backing array.
+		for _, id := range flat {
+			if a.Node(id).kind != BoolLit {
+				out = append(out, id)
+			}
+		}
+		flat = append(out, a.boolID)
+	}
+
+	sort.Slice(flat, func(i, j int) bool {
+		return flat[i] < flat[j]
+	})
+
+	out := flat[:0]
+	for _, id := range flat {
+		if len(out) == 0 || out[len(out)-1] != id {
+			out = append(out, id)
+		}
+	}
+
+	flat = out
+
+	// handle case 4 and 5
+	keep := flat[:0]
+	for i, id := range flat {
+		redundant := false
+		for j, other := range flat {
+			if i == j {
+				continue
+			}
+			if a.Subtype(id, other) {
+				redundant = true
+				break
+			}
+		}
+		if !redundant {
+			keep = append(keep, id)
+		}
+	}
+
+	flat = keep
+
+	// handle cases 1 and 2 (after redundant removal)
+	switch len(flat) {
+	case 0:
+		return a.neverID
+	case 1:
+		return flat[0]
+	}
+
+	a.scratch = a.scratch[:0]
+	a.scratch = append(a.scratch, encodingVersion, byte(Sum))
+	a.scratch = put32(a.scratch, int32(len(flat)))
+	for _, id := range flat {
+		a.scratch = putu64(a.scratch, a.Fingerprint(id))
+	}
+
+	fp := a.hash(a.scratch)
+	if id := a.find(fp, func(id TypeID) bool {
+		return a.nodes[id].kind == Sum && equalTypeIDs(a.sum(id), flat)
+	}); id != 0 {
+		return id
+	}
+
+	r := range32{off: int32(len(a.refs)), len: int32(len(flat))}
+	a.refs = append(a.refs, flat...)
+	i := int32(len(a.sums))
+	a.sums = append(a.sums, r)
+	return a.appendNode(Node{kind: Sum, data: i}, fp, a.hashHead[fp])
+}
+
 func (a *Arena) internRefined(base TypeID, c ConstraintID) TypeID {
 	if c == 0 {
 		return base
@@ -348,6 +486,15 @@ func (a *Arena) objectFields(id TypeID) []Field {
 	}
 	r := a.objects[n.data]
 	return a.fields[r.off : r.off+r.len]
+}
+
+func (a *Arena) sum(id TypeID) []TypeID {
+	n := a.Node(id)
+	if n.kind != Sum || int(n.data) >= len(a.sums) {
+		return nil
+	}
+	r := a.sums[n.data]
+	return a.refs[r.off : r.off+r.len]
 }
 
 func equalTypeIDs(a, b []TypeID) bool {

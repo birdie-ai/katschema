@@ -101,7 +101,7 @@ func (n *normalizer) consume(id ast.NodeID) error {
 	id = n.ungroup(id)
 	node := n.c.t.Node(id)
 	if node.Kind() != ast.Binary {
-		return n.c.error(id, "unsupported constraint expression %s", node.Kind())
+		return n.c.errorf(id, "unsupported constraint expression %s", node.Kind())
 	}
 
 	b := n.c.t.Binary(id)
@@ -144,13 +144,13 @@ func (n *normalizer) consume(id ast.NodeID) error {
 	case token.In:
 		return n.inSet(b.Left, b.Right)
 	}
-	return n.c.error(id, "unsupported constraint operator %s", b.Op)
+	return n.c.errorf(id, "unsupported constraint operator %s", b.Op)
 }
 
 func (n *normalizer) consumeEnumOr(id ast.NodeID) ([]TypeID, error) {
 	id = n.ungroup(id)
 	if n.c.t.Node(id).Kind() != ast.Binary {
-		return nil, n.c.error(id, "unsupported expression in OR constraint")
+		return nil, n.c.errorf(id, "unsupported expression in OR constraint")
 	}
 
 	b := n.c.t.Binary(id)
@@ -177,7 +177,7 @@ func (n *normalizer) consumeEnumOr(id ast.NodeID) ([]TypeID, error) {
 		return n.inValues(b.Left, b.Right)
 	}
 
-	return nil, n.c.error(
+	return nil, n.c.errorf(
 		id,
 		"OR currently requires equality or in constraints",
 	)
@@ -252,7 +252,7 @@ func (n *normalizer) compare(left ast.NodeID, op token.Kind, right ast.NodeID) e
 	if n.isLenX(right) {
 		return n.lengthBound(invertOrder(op), left)
 	}
-	return n.c.error(left, "constraint comparison must reference x or len(x)")
+	return n.c.errorf(left, "constraint comparison must reference x or len(x)")
 }
 
 // equal canonicalize equality checks as enums. THis is great because it composes
@@ -279,7 +279,7 @@ func (n *normalizer) equalityValues(left, right ast.NodeID) ([]TypeID, error) {
 	case n.isX(right):
 		id = left
 	default:
-		return nil, n.c.error(
+		return nil, n.c.errorf(
 			left,
 			"equality constraint must compare x with a literal",
 		)
@@ -291,7 +291,7 @@ func (n *normalizer) equalityValues(left, right ast.NodeID) ([]TypeID, error) {
 	}
 
 	if !n.c.a.literalCompat(n.base, lit) {
-		return nil, n.c.error(
+		return nil, n.c.errorf(
 			id,
 			"literal is not compatible with %s",
 			n.c.a.Node(n.base).Kind(),
@@ -306,11 +306,11 @@ func (n *normalizer) inValues(left, right ast.NodeID) ([]TypeID, error) {
 	right = n.ungroup(right)
 
 	if !n.isX(left) {
-		return nil, n.c.error(left, "left side of in must be x")
+		return nil, n.c.errorf(left, "left side of in must be x")
 	}
 
 	if n.c.t.Node(right).Kind() != ast.List {
-		return nil, n.c.error(
+		return nil, n.c.errorf(
 			right,
 			"right side of in must be a literal array",
 		)
@@ -326,7 +326,7 @@ func (n *normalizer) inValues(left, right ast.NodeID) ([]TypeID, error) {
 		}
 
 		if !n.c.a.literalCompat(n.base, id) {
-			return nil, n.c.error(
+			return nil, n.c.errorf(
 				v,
 				"enum literal is not compatible with %s",
 				n.c.a.Node(n.base).Kind(),
@@ -355,11 +355,11 @@ func (n *normalizer) literal(id ast.NodeID) (TypeID, error) {
 	case ast.Null, ast.Bool, ast.Int, ast.Float, ast.String:
 		t, optional, err := n.c.value(id, false)
 		if optional {
-			return 0, n.c.error(id, "optional literal is invalid in a constraint")
+			return 0, n.c.errorf(id, "optional literal is invalid in a constraint")
 		}
 		return t, err
 	default:
-		return 0, n.c.error(id, "constraint requires a scalar literal")
+		return 0, n.c.errorf(id, "constraint requires a scalar literal")
 	}
 }
 
@@ -384,28 +384,28 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 	switch kind {
 	case Int:
 		if litKind != ast.Int {
-			return n.c.error(literal, "int constraint requires an integer bound")
+			return n.c.errorf(literal, "int constraint requires an integer bound")
 		}
 		raw := n.c.t.Int(literal)
 		v, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
-			return n.c.error(literal, "integer bound %q is outside int64", raw)
+			return n.c.errorf(literal, "integer bound %q is outside int64", raw)
 		}
 		n.applyInt(op, v)
 		return nil
 	case Float:
 		if litKind != ast.Float {
-			return n.c.error(literal, "float constraint requires an float bound")
+			return n.c.errorf(literal, "float constraint requires an float bound")
 		}
 		raw := n.c.t.Float(literal)
 		v, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
-			return n.c.error(literal, "invalid numeric bound %q", raw)
+			return n.c.errorf(literal, "invalid numeric bound %q", raw)
 		}
 		n.applyFloat(op, canonicalFloat(v))
 		return nil
 	default:
-		return n.c.error(literal, "numeric comparison is invalid for %s", kind)
+		return n.c.errorf(literal, "numeric comparison is invalid for %s", kind)
 	}
 }
 
@@ -414,16 +414,16 @@ func (n *normalizer) lengthBound(op token.Kind, literal ast.NodeID) error {
 	switch kind {
 	case String, List, Tuple, Object:
 	default:
-		return n.c.error(literal, "len(x) is invalid for %s", kind)
+		return n.c.errorf(literal, "len(x) is invalid for %s", kind)
 	}
 	litKind := n.c.t.Node(literal).Kind()
 	if litKind != ast.Int {
-		return n.c.error(literal, "length comparison requires integer right-hand-side but got %s", litKind)
+		return n.c.errorf(literal, "length comparison requires integer right-hand-side but got %s", litKind)
 	}
 	raw := n.c.t.Int(literal)
 	v, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || v < 0 {
-		return n.c.error(literal, "length bound must be a non-negative int64")
+		return n.c.errorf(literal, "length bound must be a non-negative int64")
 	}
 	n.applyLen(op, v)
 	return nil

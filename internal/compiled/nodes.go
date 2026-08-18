@@ -30,6 +30,7 @@ const (
 	List
 	Tuple
 	Object
+	Sum
 	Refined
 )
 
@@ -63,6 +64,8 @@ func (k Kind) String() string {
 		return "tuple"
 	case Object:
 		return "object"
+	case Sum:
+		return "sum"
 	case Refined:
 		return "refined"
 	}

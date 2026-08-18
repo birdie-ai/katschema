@@ -85,6 +85,130 @@ func TestCompileIntern(t *testing.T) {
 				return a.AddSchema(a.AddName("string", z), nil, z)
 			},
 		},
+		{
+			name: "A | A => A",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("string", z), nil, z),
+					a.AddSchema(a.AddName("string", z), nil, z),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("string", z), nil, z)
+			},
+		},
+		{
+			name: "A | B | C | A => A | B | C", // redundancy
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("bool", z), nil, z),
+					a.AddSum(
+						a.AddSchema(a.AddName("int", z), nil, z),
+						a.AddSum(
+							a.AddSchema(a.AddName("float", z), nil, z),
+							a.AddSchema(a.AddName("bool", z), nil, z),
+							z,
+						),
+						z,
+					),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("bool", z), nil, z),
+					a.AddSum(
+						a.AddSchema(a.AddName("int", z), nil, z),
+						a.AddSchema(a.AddName("float", z), nil, z),
+						z,
+					),
+					z,
+				)
+			},
+		},
+		{
+			name: "A | (never) => A",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("string", z), nil, z),
+					a.AddSchema(a.AddName("never", z), nil, z),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("string", z), nil, z)
+			},
+		},
+		{
+			name: "A | (any) => (any)",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("string", z), nil, z),
+					a.AddSchema(a.AddName("any", z), nil, z),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("any", z), nil, z)
+			},
+		},
+		{
+			name: "A | B => B iff A <= B",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddInt("1337", z),
+					a.AddSchema(a.AddName("int", z), nil, z),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("int", z), nil, z)
+			},
+		},
+		{
+			name: "A | B => A iff B <= A",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("int", z), nil, z),
+					a.AddInt("1337", z),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("int", z), nil, z)
+			},
+		},
+		{
+			name: "true | false => (bool)",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddBool(true, z),
+					a.AddBool(false, z),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("bool", z), nil, z)
+			},
+		},
+		{
+			name: "true | false | true => (bool)",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddSum(
+					a.AddBool(true, z),
+					a.AddSum(
+						a.AddBool(false, z),
+						a.AddBool(true, z),
+						z,
+					),
+					z,
+				)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(a.AddName("bool", z), nil, z)
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tree := ast.New()
