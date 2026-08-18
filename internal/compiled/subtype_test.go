@@ -67,6 +67,74 @@ func TestSubtype(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "(int, x > 10) is smaller than (int, x >= 10)",
+			a:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(10)))),
+			b:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Ge, ks.IntExpr(10)))),
+			want: true,
+		},
+		{
+			name: "(int, x > 9) is smaller than (int, x >= 10)",
+			a:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(9)))),
+			b:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Ge, ks.IntExpr(10)))),
+			want: true,
+		},
+		{
+			name: "(int, -1 < x < 11) is equal than (int, 0 <= x <= 10)",
+			a: ks.With(ks.Int(), ks.Check(
+				ks.Binary(
+					ks.Binary(ks.IntExpr(-1), ks.Lt, ks.X()),
+					ks.Lt,
+					ks.IntExpr(11)))),
+			b: ks.With(ks.Int(), ks.Check(
+				ks.Binary(
+					ks.Binary(ks.IntExpr(0), ks.Le, ks.X()),
+					ks.Le,
+					ks.IntExpr(10)))),
+			want: true,
+		},
+		{
+			name: "(int, -1 < x < 9) is smaller than (int, -1 < x < 10)",
+			a: ks.With(ks.Int(), ks.Check(
+				ks.Binary(
+					ks.Binary(ks.IntExpr(-1), ks.Lt, ks.X()),
+					ks.Lt,
+					ks.IntExpr(9)))),
+			b: ks.With(ks.Int(), ks.Check(
+				ks.Binary(
+					ks.Binary(ks.IntExpr(-1), ks.Lt, ks.X()),
+					ks.Lt,
+					ks.IntExpr(10)))),
+			want: true,
+		},
+		{
+			name: "(int, 0 <= x < 10) is smaller than (int, -1 < x < 10)",
+			a: ks.With(ks.Int(), ks.Check(
+				ks.Binary(
+					ks.Binary(ks.IntExpr(0), ks.Le, ks.X()),
+					ks.Lt,
+					ks.IntExpr(10)))),
+			b: ks.With(ks.Int(), ks.Check(
+				ks.Binary(
+					ks.Binary(ks.IntExpr(-1), ks.Lt, ks.X()),
+					ks.Lt,
+					ks.IntExpr(10)))),
+			want: true,
+		},
+		{
+			name: "(int, 0 < x < 10) is smaller than (int, 0 < x < 10)",
+			a: ks.With(ks.Int(), ks.Check(
+				ks.Binary(
+					ks.Binary(ks.IntExpr(0), ks.Lt, ks.X()),
+					ks.Lt,
+					ks.IntExpr(10)))),
+			b: ks.With(ks.Int(), ks.Check(
+				ks.Binary(
+					ks.Binary(ks.IntExpr(0), ks.Lt, ks.X()),
+					ks.Lt,
+					ks.IntExpr(10)))),
+			want: true,
+		},
+		{
 			name: "narrow object is a subtype",
 			a: ks.Object(
 				ks.Field("a", ks.With(
