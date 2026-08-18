@@ -278,7 +278,15 @@ func (a *Arena) internTuple(elems []TypeID) TypeID {
 	return a.appendNode(Node{kind: Tuple, data: i}, fp, a.hashHead[fp])
 }
 
+// Invariants of object interning.
+// 1. Source order of fields is semantically irrelevant.
+// 2. Once interned, fields are sorted by name lexicographically.
+// 3. Fields are comparable using Go's native == or !=.
 func (a *Arena) internObject(fields []Field) TypeID {
+	// NOTE(i4k): several things depends on the fields being sorted by name!
+	// - object canonicalization
+	// - several places search fields by name using ad-hoc binary search implementations
+	// that just assume fields are sorted **by name**, so don't change this lightly!
 	sort.Slice(fields, func(i, j int) bool {
 		return a.StringValue(fields[i].Name) < a.StringValue(fields[j].Name)
 	})
@@ -289,7 +297,7 @@ func (a *Arena) internObject(fields []Field) TypeID {
 	for _, f := range fields {
 		a.scratch = putstr(a.scratch, a.StringValue(f.Name))
 		a.scratch = append(a.scratch, byte(f.Flags))
-		a.scratch = putu64(a.scratch, a.Fingerprint(f.Type))
+		a.scratch = putu64(a.scratch, a.Fingerprint(f.Value))
 	}
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {

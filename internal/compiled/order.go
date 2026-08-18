@@ -96,7 +96,7 @@ func (x *Arena) objectSubtype(a, b TypeID) bool {
 		if f.Optional() && !g.Optional() {
 			return false
 		}
-		if !x.Subtype(f.Type, g.Type) {
+		if !x.Subtype(f.Value, g.Value) {
 			return false
 		}
 	}

@@ -128,7 +128,7 @@ func (a *Arena) validObject(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		if i == len(want) || a.StringValue(want[i].Name) != name || !mark(i) {
 			return false
 		}
-		if !a.valid(want[i].Type, t, f.Value) {
+		if !a.valid(want[i].Value, t, f.Value) {
 			return false
 		}
 	}

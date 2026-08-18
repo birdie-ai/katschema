@@ -83,9 +83,13 @@ type FieldFlags uint8
 
 const FieldOptional FieldFlags = 1 << 0
 
+// Field represents a field of an object.
+//
+// Field is guaranteed to remain comparable, so Field values may be compared
+// directly using == and !=.
 type Field struct {
 	Name  StringID
-	Type  TypeID
+	Value TypeID
 	Flags FieldFlags
 }
 
