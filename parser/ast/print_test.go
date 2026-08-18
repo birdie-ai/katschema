@@ -278,6 +278,46 @@ func TestPrint(t *testing.T) {
 			},
 			want: `(int,x<(x+1)*2)`,
 		},
+		{
+			name: "simple sum type",
+			root: func(a *Tree) NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("int", z), nil, z),
+					a.AddSchema(a.AddName("string", z), nil, z),
+					z)
+			},
+			want: `(int)|(string)`,
+		},
+		{
+			name: "sum type with literal schema values",
+			root: func(a *Tree) NodeID {
+				return a.AddSum(
+					a.AddSchema(
+						a.AddObject([]Field{
+							{
+								Name:  a.AddText("str"),
+								Value: a.AddString("test", z),
+							},
+						}, z), nil, z),
+					a.AddSchema(a.AddName("string", z), nil, z),
+					z,
+				)
+			},
+			want: `({"str":"test"})|(string)`,
+		},
+		{
+			name: "sum: chaining more than 2 types",
+			root: func(a *Tree) NodeID {
+				return a.AddSum(
+					a.AddSchema(a.AddName("int", z), nil, z),
+					a.AddSum(
+						a.AddSchema(a.AddName("float", z), nil, z),
+						a.AddSchema(a.AddName("string", z), nil, z),
+						z),
+					z)
+			},
+			want: `(int)|(float)|(string)`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tree := New()
