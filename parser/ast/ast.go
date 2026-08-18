@@ -36,6 +36,7 @@ type (
 		pathParts []PathPart
 
 		schemas  []schemaData
+		sums     []SumData
 		attrs    []AttrData
 		calls    []callData
 		unaries  []UnaryData
@@ -50,6 +51,11 @@ type (
 	SchemaData struct {
 		Type    NodeID
 		Clauses []NodeID
+	}
+
+	SumData struct {
+		Left  NodeID
+		Right NodeID
 	}
 
 	AttrData struct {
@@ -111,6 +117,7 @@ const (
 	List
 	Object
 	Schema
+	Sum
 
 	Name
 	Path
@@ -165,6 +172,7 @@ func (t *Tree) Reset() {
 	t.paths = t.paths[:0]
 	t.pathParts = t.pathParts[:0]
 	t.schemas = t.schemas[:0]
+	t.sums = t.sums[:0]
 	t.attrs = t.attrs[:0]
 	t.calls = t.calls[:0]
 	t.unaries = t.unaries[:0]
@@ -362,6 +370,20 @@ func (t *Tree) Schema(id NodeID) SchemaData {
 	return SchemaData{Type: d.typ, Clauses: refs(t.refs, d.clauses)}
 }
 
+func (t *Tree) AddSum(left, right NodeID, span token.Span) NodeID {
+	i := uint32(len(t.sums))
+	t.sums = append(t.sums, SumData{Left: left, Right: right})
+	return t.addNode(Sum, span, i)
+}
+
+func (t *Tree) Sum(id NodeID) SumData {
+	n := t.Node(id)
+	if n.Kind() != Sum || int(n.data) >= len(t.sums) {
+		return SumData{}
+	}
+	return t.sums[n.data]
+}
+
 func (t *Tree) AddConstraint(expr NodeID, span token.Span) NodeID {
 	return t.addNode(Constraint, span, uint32(expr))
 }
@@ -482,6 +504,8 @@ func (k Kind) String() string {
 		return "Object"
 	case Schema:
 		return "Schema"
+	case Sum:
+		return "Sum"
 	case Name:
 		return "Name"
 	case Path:
