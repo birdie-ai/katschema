@@ -174,6 +174,51 @@ func TestSubtype(t *testing.T) {
 			),
 			want: true,
 		},
+		{
+			name: "(int) | (string) <= (any)",
+			a:    ks.Sum(ks.Int(), ks.String()),
+			b:    ks.Any(),
+			want: true,
+		},
+		{
+			name: "(int) | (string) <= (int)",
+			a:    ks.Sum(ks.Int(), ks.String()),
+			b:    ks.Int(),
+			want: false,
+		},
+		{
+			name: "(int, x > 0) | (int, x < 0) <= (int)",
+			a: ks.Sum(
+				ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)))),
+				ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Lt, ks.IntExpr(0)))),
+			),
+			b:    ks.Int(),
+			want: true,
+		},
+		{
+			name: "(int, x > 0) | (int, x < 0) <= (int, x > 0)",
+			a: ks.Sum(
+				ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)))),
+				ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Lt, ks.IntExpr(0)))),
+			),
+			b:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)))),
+			want: false,
+		},
+		{
+			name: "(int, x > 0) <= (int) | (string)",
+			a:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)))),
+			b:    ks.Sum(ks.Int(), ks.String()),
+			want: true,
+		},
+		{
+			name: "(int, x > 0) <= (int, x < 0) | (string)",
+			a:    ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)))),
+			b: ks.Sum(
+				ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Lt, ks.IntExpr(0)))),
+				ks.String(),
+			),
+			want: false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			arena := NewArena()
@@ -182,12 +227,6 @@ func TestSubtype(t *testing.T) {
 			b := compileOn(t, arena, tree, tc.b)
 			if got := arena.Subtype(a, b); got != tc.want {
 				t.Fatalf("Subtype(a, b) = %v, want %v", got, tc.want)
-			}
-			if a != b {
-				// we can also check the reverse but only if they are different types.
-				if got := arena.Subtype(b, a); got != !tc.want {
-					t.Fatalf("reversed Subtype(b, a) = %v, want %v", got, !tc.want)
-				}
 			}
 		})
 	}

@@ -25,6 +25,27 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 	}
 
 	an, bn := x.Node(a), x.Node(b)
+
+	if an.kind == Sum {
+		// A | B <= C	iff A <= C && B <= C
+		for _, member := range x.sum(a) {
+			if !x.Subtype(member, b) {
+				return false
+			}
+		}
+		return true
+	}
+
+	if bn.kind == Sum {
+		// C <= A | B	iff C <= A || C <= B
+		for _, member := range x.sum(b) {
+			if x.Subtype(a, member) {
+				return true
+			}
+		}
+		return false
+	}
+
 	if an.kind == Refined {
 		ar := x.refinements[an.data]
 		if bn.kind == Refined {
