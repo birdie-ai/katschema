@@ -228,7 +228,7 @@ func lowerIntStronger(af boundFlags, av int64, bf boundFlags, bv int64) bool {
 	if af&hasMin == 0 || av < bv {
 		return false
 	}
-	return av > bv
+	return av >= bv
 }
 
 func upperIntStronger(af boundFlags, av int64, bf boundFlags, bv int64) bool {
@@ -238,7 +238,7 @@ func upperIntStronger(af boundFlags, av int64, bf boundFlags, bv int64) bool {
 	if af&hasMax == 0 || av > bv {
 		return false
 	}
-	return av < bv
+	return av <= bv
 }
 
 func lowerFloatStronger(af boundFlags, av float64, bf boundFlags, bv float64) bool {
