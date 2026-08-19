@@ -1,6 +1,7 @@
 package compiled
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -10,10 +11,12 @@ import (
 
 type CompileError struct {
 	Span token.Span
-	Msg  string
+	Err  error
 }
 
-func (e *CompileError) Error() string { return "compile: " + e.Msg }
+var ErrOptionalUnexpected = errors.New("optional is only valid in the object field")
+
+func (e *CompileError) Error() string { return fmt.Sprintf("compile: %s", e.Err.Error()) }
 
 // Compile lowers root into a canonical semantic type in the arena.
 func Compile(a *Arena, t *ast.Tree, root ast.NodeID) (TypeID, error) {
@@ -33,7 +36,7 @@ func Compile(a *Arena, t *ast.Tree, root ast.NodeID) (TypeID, error) {
 	// then consider this as a valid emptiness? we can easily address this
 	// in the future, blocking now such usage until we decide what to do!
 	if optional {
-		return 0, c.error(root, "optional can only be used in object fields")
+		return 0, c.error(root, ErrOptionalUnexpected)
 	}
 	return id, nil
 }
@@ -43,8 +46,12 @@ type compiler struct {
 	t *ast.Tree
 }
 
-func (c *compiler) error(id ast.NodeID, format string, args ...any) error {
-	return &CompileError{Span: c.t.Node(id).Span(), Msg: fmt.Sprintf(format, args...)}
+func (c *compiler) errorf(id ast.NodeID, format string, args ...any) error {
+	return &CompileError{Span: c.t.Node(id).Span(), Err: fmt.Errorf(format, args...)}
+}
+
+func (c *compiler) error(id ast.NodeID, err error) error {
+	return &CompileError{Span: c.t.Node(id).Span(), Err: err}
 }
 
 func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
@@ -68,17 +75,20 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 	case ast.Object:
 		t, err := c.object(id)
 		return t, false, err
+	case ast.Sum:
+		t, err := c.sum(id)
+		return t, false, err
 	case ast.Schema:
 		return c.schema(id, field)
 	default:
-		return 0, false, c.error(id, "%s is not a value or schema", n.Kind())
+		return 0, false, c.errorf(id, "%s is not a value or schema", n.Kind())
 	}
 }
 
 func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
 	v, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
-		return 0, c.error(id, "integer literal %q is outside int64", raw)
+		return 0, c.errorf(id, "integer literal %q is outside int64", raw)
 	}
 	return c.a.internInt(v), nil
 }
@@ -86,7 +96,7 @@ func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
 func (c *compiler) floatLiteral(id ast.NodeID, raw string) (TypeID, error) {
 	v, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
-		return 0, c.error(id, "invalid number literal %q", raw)
+		return 0, c.errorf(id, "invalid number literal %q", raw)
 	}
 	return c.a.internFloat(v), nil
 }
@@ -99,13 +109,13 @@ func (c *compiler) list(id ast.NodeID) (TypeID, error) {
 			return 0, err
 		}
 		if optional {
-			return 0, c.error(elems[0], "optional is only valid on object fields")
+			return 0, c.error(elems[0], ErrOptionalUnexpected)
 		}
 		return c.a.internList(elem), nil
 	}
 	for _, elem := range elems {
 		if c.hasSchemaSyntax(elem) {
-			return 0, c.error(id, "array schemas must contain exactly one element schema")
+			return 0, c.errorf(id, "array schemas must contain exactly one element schema")
 		}
 	}
 
@@ -116,7 +126,7 @@ func (c *compiler) list(id ast.NodeID) (TypeID, error) {
 			return 0, err
 		}
 		if optional {
-			return 0, c.error(elem, "optional is only valid on object fields")
+			return 0, c.error(elem, ErrOptionalUnexpected)
 		}
 		out[i] = t
 	}
@@ -150,7 +160,7 @@ func (c *compiler) object(id ast.NodeID) (TypeID, error) {
 	for i, f := range src {
 		name := c.t.Text(f.Name)
 		if _, ok := seen[name]; ok {
-			return 0, c.error(id, "duplicate object field %q", name)
+			return 0, c.errorf(id, "duplicate object field %q", name)
 		}
 		seen[name] = struct{}{}
 
@@ -167,6 +177,29 @@ func (c *compiler) object(id ast.NodeID) (TypeID, error) {
 	return c.a.internObject(fields), nil
 }
 
+func (c *compiler) sum(id ast.NodeID) (TypeID, error) {
+	s := c.t.Sum(id)
+
+	var members [2]TypeID
+	left, optional, err := c.value(s.Left, false)
+	if err != nil {
+		return 0, err
+	}
+	if optional {
+		return 0, c.error(s.Left, ErrOptionalUnexpected)
+	}
+	members[0] = left
+	right, optional, err := c.value(s.Right, false)
+	if err != nil {
+		return 0, err
+	}
+	if optional {
+		return 0, c.error(s.Left, ErrOptionalUnexpected)
+	}
+	members[1] = right
+	return c.a.internSum(members), nil
+}
+
 func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	s := c.t.Schema(id)
 	base, err := c.typeRef(s.Type)
@@ -179,7 +212,7 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 		return 0, false, err
 	}
 	if optional && !field {
-		return 0, false, c.error(id, "optional is only valid on object fields")
+		return 0, false, c.error(id, ErrOptionalUnexpected)
 	}
 
 	constraint, impossible, err := c.normalizeConstraints(base, s.Clauses)
@@ -211,27 +244,27 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 		case "string":
 			return c.a.String(), nil
 		default:
-			return 0, c.error(id, "unresolved type %q", c.t.Name(id))
+			return 0, c.errorf(id, "unresolved type %q", c.t.Name(id))
 		}
 	case ast.List:
 		elems := c.t.List(id)
 		if len(elems) != 1 {
-			return 0, c.error(id, "array type must contain exactly one element schema")
+			return 0, c.errorf(id, "array type must contain exactly one element schema")
 		}
 		elem, optional, err := c.value(elems[0], false)
 		if err != nil {
 			return 0, err
 		}
 		if optional {
-			return 0, c.error(elems[0], "optional is only valid on object fields")
+			return 0, c.error(elems[0], ErrOptionalUnexpected)
 		}
 		return c.a.internList(elem), nil
 	case ast.Object:
 		return c.object(id)
 	case ast.Path:
-		return 0, c.error(id, "type paths require a resolver")
+		return 0, c.errorf(id, "type paths require a resolver")
 	default:
-		return 0, c.error(id, "%s cannot be used as a type reference", c.t.Node(id).Kind())
+		return 0, c.errorf(id, "%s cannot be used as a type reference", c.t.Node(id).Kind())
 	}
 }
 
@@ -251,12 +284,12 @@ func (c *compiler) optionality(clauses []ast.NodeID) (bool, error) {
 		v := true
 		if a.HasValue {
 			if c.t.Node(a.Value).Kind() != ast.Bool {
-				return false, c.error(id, "optional must be boolean")
+				return false, c.errorf(id, "optional must be boolean")
 			}
 			v = c.t.Bool(a.Value)
 		}
 		if set && val != v {
-			return false, c.error(id, "conflicting optional clauses")
+			return false, c.errorf(id, "conflicting optional clauses")
 		}
 		set, val = true, v
 	}

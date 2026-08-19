@@ -22,7 +22,6 @@ test/coverage:
 	go test ./... \
 		-coverpkg=./... \
 		-covermode=atomic \
-		-coverprofile=$(COVERAGE_PROFILE)
 	@echo
 	go tool cover -func=$(COVERAGE_PROFILE)
 
