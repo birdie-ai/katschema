@@ -1,6 +1,7 @@
 package compiled
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"unicode/utf8"
@@ -11,9 +12,6 @@ import (
 // Valid reports whether the literal AST rooted at value is accepted by typ.
 // The AST must contain data values, not schema expressions.
 func (a *Arena) Valid(typ TypeID, values *ast.Tree, value ast.NodeID) bool {
-	if a == nil || values == nil {
-		return false
-	}
 	return a.valid(typ, values, value)
 }
 
@@ -74,11 +72,19 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		return true
 	case Object:
 		return a.validObject(typ, t, value)
+	case Sum:
+		for _, member := range a.sum(typ) {
+			if a.valid(member, t, value) {
+				return true
+			}
+		}
+		return false
 	case Refined:
 		r := a.refinements[n.data]
 		return a.valid(r.base, t, value) && a.validConstraint(r.constraint, t, value)
+	default:
+		panic(fmt.Errorf("unsupported kind: %v", n.kind))
 	}
-	return false
 }
 
 func (a *Arena) validObject(typ TypeID, t *ast.Tree, value ast.NodeID) bool {

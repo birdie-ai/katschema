@@ -424,6 +424,60 @@ func TestValidation(t *testing.T) {
 			value: ks.List(ks.LitInt(3)),
 			want:  false,
 		},
+		{
+			name:   "(int)|(string) accepts literal int",
+			schema: ks.Sum(ks.Int(), ks.String()),
+			value:  ks.LitInt(10),
+			want:   true,
+		},
+		{
+			name:   "(int)|(string) accepts literal string",
+			schema: ks.Sum(ks.Int(), ks.String()),
+			value:  ks.LitString("test"),
+			want:   true,
+		},
+		{
+			name:   "(int)|(string) do not accept bool",
+			schema: ks.Sum(ks.Int(), ks.String()),
+			value:  ks.LitBool(true),
+			want:   false,
+		},
+		{
+			name: `{"a": (int)}|(string) accepts literal string`,
+			schema: ks.Sum(
+				ks.Object(ks.Field("a", ks.Int())),
+				ks.String(),
+			),
+			value: ks.LitString("test"),
+			want:  true,
+		},
+		{
+			name: `{"a": (int)}|(string) accepts literal object`,
+			schema: ks.Sum(
+				ks.Object(ks.Field("a", ks.Int())),
+				ks.String(),
+			),
+			value: ks.Object(ks.Field("a", ks.LitInt(67))),
+			want:  true,
+		},
+		{
+			name: `{"a": (int)}|(string) rejects literal object with different fields`,
+			schema: ks.Sum(
+				ks.Object(ks.Field("a", ks.Int())),
+				ks.String(),
+			),
+			value: ks.Object(ks.Field("b", ks.LitInt(67))),
+			want:  false,
+		},
+		{
+			name: `{"a": (int, optional)}|(string) accepts literal empty object`,
+			schema: ks.Sum(
+				ks.Object(ks.Field("a", ks.Optional(ks.Int()))),
+				ks.String(),
+			),
+			value: ks.Object(),
+			want:  true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := NewArena()
