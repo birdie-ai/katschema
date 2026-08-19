@@ -172,7 +172,7 @@ func (c *compiler) object(id ast.NodeID) (TypeID, error) {
 		if optional {
 			flags |= FieldOptional
 		}
-		fields[i] = Field{Name: c.a.internString(name), Type: t, Flags: flags}
+		fields[i] = Field{Name: c.a.internString(name), Value: t, Flags: flags}
 	}
 	return c.a.internObject(fields), nil
 }

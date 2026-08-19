@@ -96,5 +96,5 @@ func (f FieldView) Name() string {
 	return f.a.StringValue(f.f.Name)
 }
 
-func (f FieldView) Type() TypeID   { return f.f.Type }
+func (f FieldView) Type() TypeID   { return f.f.Value }
 func (f FieldView) Optional() bool { return f.f.Optional() }
