@@ -11,9 +11,6 @@ import (
 // Valid reports whether the literal AST rooted at value is accepted by typ.
 // The AST must contain data values, not schema expressions.
 func (a *Arena) Valid(typ TypeID, values *ast.Tree, value ast.NodeID) bool {
-	if a == nil || values == nil {
-		return false
-	}
 	return a.valid(typ, values, value)
 }
 
