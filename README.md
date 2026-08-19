@@ -12,7 +12,7 @@ It supports the features below:
 * Primitive types.
 * Structural types (product types).
 * Sum types.
-* Value constraints.
+* Schema constraints.
 * Options.
 * Builtin functions.
 
@@ -185,6 +185,167 @@ Example:
 	}
 }
 ```
+
+## Type ordering
+
+A useful way to think about Katschema is that every value or schema describes a set of valid values.
+
+For example:
+
+```
+10
+```
+
+only accepts the value `10`, while:
+
+```
+(int, x > 0)
+```
+
+accepts all positive integers and:
+
+```
+(int)
+```
+
+ccepts all integers.
+
+Because everything accepted by the first schema is also accepted by the next one, we can order
+them from more specific to more general:
+
+```
+10 <= (int, x > 0), <= (int) <= (any)
+```
+
+`any` is the most general type and accepts every value.
+
+The same applies to structured values. For example:
+
+```
+{"a": 1} <= {"a": (int)}
+```
+
+and
+
+```
+[1, 2, 3] <= [(int)]
+```
+
+Constraints move a type down in this ordering because they reduce the set of values it accepts:
+
+```
+(int, x == 10) <= (int, x > 0) <= (int)
+```
+
+**Not every pair of schemas are comparable**. For example:
+
+```
+(int, x > 0)
+```
+and
+```
+(int, x < 0)
+```
+
+are both more specific than `(int)` but neither is more specific than the other.
+
+This kind of ordering is a **partial order** (or **poset**).
+
+### Common types
+
+Given two schemas, Katschema can reason about their common upper and lower bounds.
+
+The **least upper bound**, or `lub`, is the _smallest type_ that can represet values from either
+schema.
+
+For example:
+
+```
+lub(10, 20)
+```
+
+can be represented exactly as:
+```
+(int, x in [10, 20])
+```
+
+and
+
+```
+lub((int, x < 0), (int, x >= 0))
+```
+is just `(int)`, as the smallest type that can represent values both schemas is the whole `integer`
+set of values.
+
+For unrelated alternatives, a `sum` type can preserve the exact result:
+
+```
+lub((int, x > 0), (string))
+```
+becomes:
+```
+(int, x > 0) | (string)
+```
+
+Notice that `(any)` would also accept both sides but it _is not_ the _least upper bound_ because
+it accepts much more than it's needed.
+
+Similarly:
+
+```
+lub((int, x > 0), (int, x < 0))
+```
+
+is not necessarily `(int)` because `(int)` also accepts `0`. The exact common type is the sum:
+```
+(int, x > 0) | (int, x < 0)
+```
+
+The other important operation is the **greatest lower bound**, or `glb`, and it means the most
+general schema that satisfies both sides at the same time. It's like the intersection of values
+that satisfies both types.
+
+For example, `(int, x >= 0)` accepts `0, 1, 2, 3, ..., N` and `(int, x <= 100)` accepts
+`-N, ..., -3, -2, -1, 0, 1, 2, 3, ..., 100`, then:
+
+```
+glb((int, x >= 0), (int, x <= 100))
+```
+is
+```
+(int, 0 <= x <= 100)
+```
+
+while:
+```
+glb((int, x > 0), (int, x < 0))
+```
+accepts no value (returns Katschema builtin `(never)` type).
+
+In summary:
+
+The `lub(a, b)` makes a type that accept all values of both `a` and `b`.
+The `glb(a, b)` makes a type that accepts values that would be accepted by both `a` and `b`.
+
+Together these relationships form a lattice of Katschema values/types.
+
+Apart from validation, the ordering can be used to reason about schema compatibility.
+Example:
+
+```
+(int, x > 0)
+```
+to
+```
+(int)
+```
+widens the schema, so every value accepted before is still accepted afterwards.
+This seems obvious but Katschema gives you a mechanism that expands to all types and then
+given any type you can easily check if `old <= new`.
+So from `(int)` to `(int, x > 0)` narrows the type, making previously valid values invalid, and
+similarly you can apply this to objects and arrays, where each pair of types is either
+`incomparable` (which means the change is definitely breaking) or `comparable` and then you
+definitily know if it's widening or narrowing the existing type.
 
 ### constraint expression
 
