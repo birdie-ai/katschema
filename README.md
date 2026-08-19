@@ -208,7 +208,7 @@ accepts all positive integers and:
 (int)
 ```
 
-ccepts all integers.
+accepts all integers.
 
 Because everything accepted by the first schema is also accepted by the next one, we can order
 them from more specific to more general:
