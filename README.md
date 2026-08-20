@@ -364,7 +364,7 @@ An email can be validated and normalized using `email(x)`:
 The following primitive types are builtin:
 
 * `string`: UTF-8 string.
-* `number`: 64-bit floating point.
+* `float`: 64-bit floating point.
 * `bool`: `true` or `false`.
 * `int`: alias for `int64`.
 * `uint`: alias for `uint64`.
@@ -373,8 +373,74 @@ The following primitive types are builtin:
 
 ## Collection types
 
-* `[ ... ]`: list
-* `{ ... }`: object
+* list
+* object
+* tuple
+
+### List
+
+In the most basic form, a list is just like a JSON list.
+Example:
+
+```json
+["this", "is", "a", "list"]
+```
+The list above is _literal list_.
+
+But if it has the form:
+```
+[ (<type>) ]
+```
+Then it's a list container for the provided type. See examples below:
+
+List of strings:
+```
+[(string)]
+```
+
+List of integers:
+```
+[(int)]
+```
+etc
+
+### Object
+
+In the most basic form, an object is just like a JSON object.
+Example:
+
+```json
+{
+	"name": "katschema",
+	"categories": ["cat", "memes"]
+}
+```
+
+But in Katschema, each value can also be a schema type. Example:
+
+```json
+{
+	"name": (string),
+	"categories": [(string)]
+}
+```
+
+### Tuple
+
+A tuple is very similar to a list but it's a **finite** ordered set of values, each value
+having its own type.
+
+Example:
+
+Coordinates:
+```json
+#{29.97416777, 31.1339477975}
+```
+
+Coordinate schema:
+```json
+#{(float), (float)}
+```
 
 ## Custom types
 
