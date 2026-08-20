@@ -153,8 +153,8 @@ Katschema {
     | "[" "]" -- empty
 
   Tuple =
-  	"#[" Value ("," Value*)* "]" -- nonEmpty
-    | "#[" "]" -- empty
+  	"#{" Value ("," Value*)* "}" -- nonEmpty
+    | "#{" "}" -- empty
   
   String (String) =
     stringLiteral

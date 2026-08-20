@@ -375,7 +375,7 @@ The following primitive types are builtin:
 
 * list
 * object
-* tuple (NEW)
+* tuple
 
 ### List
 
@@ -434,12 +434,12 @@ Example:
 
 Coordinates:
 ```json
-#[29.97416777, 31.1339477975]
+#{29.97416777, 31.1339477975}
 ```
 
 Coordinate schema:
 ```json
-#[(float), (float)]
+#{(float), (float)}
 ```
 
 ## Custom types
