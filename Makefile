@@ -19,9 +19,11 @@ check/grammar:
 .PHONY: test/coverage
 test/coverage:
 	@mkdir -p $(COVERAGE_DIR)
+	@rm -f $(COVERAGE_PROFILE)
 	go test ./... \
 		-coverpkg=./... \
 		-covermode=atomic \
+		-coverprofile=$(COVERAGE_PROFILE)
 	@echo
 	go tool cover -func=$(COVERAGE_PROFILE)
 
