@@ -505,6 +505,8 @@ func (a *Arena) sum(id TypeID) []TypeID {
 	return a.refs[r.off : r.off+r.len]
 }
 
+func (a *Arena) validTypeID(id TypeID) bool { return id > 0 && int(id) < len(a.nodes) }
+
 func equalTypeIDs(a, b []TypeID) bool {
 	if len(a) != len(b) {
 		return false
