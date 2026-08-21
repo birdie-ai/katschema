@@ -109,6 +109,15 @@ func TestUnionDiscreteBounds(t *testing.T) {
 			},
 		},
 		{
+			name: "[..., N] U [N, ...]",
+			x:    intBounds{flags: hasMax, max: 10},
+			y:    intBounds{flags: hasMin, min: 10},
+			want: want{
+				z: intBounds{},
+				r: true,
+			},
+		},
+		{
 			// NOTE(i4k): there's a hole
 			name: "[-10, -1] U [1, 20]",
 			x:    intBounds{flags: hasMin | hasMax, min: -10, max: -1},
