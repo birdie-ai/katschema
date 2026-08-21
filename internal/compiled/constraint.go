@@ -908,6 +908,15 @@ func checkFloatBounds(v float64, flags boundFlags, minv, maxv float64) bool {
 	return true
 }
 
+// unionDiscreteBounds joins adjacent integer intervals.
+// This was created for implementing the lub of constraints so we can lower the SUM of
+// refined types of same base type to a single refinement with a single integer bound
+// constraint _in the case_ it's representable as a single one.
+// This is not just an optimization but an important aspect of normalization so we can
+// reduce semantically equal constraints across different types of a sum, this allow us
+// having less (or maybe none) ambiguities in the detected type of a value when its schema
+// allows for a SUM type. In other words, members of a SUM type allows for a disjunctive
+// set of values.
 // handles:
 //   - [..., N]   U [N+1, ...] = (int)
 //   - [N, ...]   U [N+M, ...] = [N, ...]
