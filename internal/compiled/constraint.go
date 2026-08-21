@@ -658,8 +658,8 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 			a.scratch = putu64(a.scratch, a.Fingerprint(id))
 		}
 	}
-	fp := a.hash(a.scratch)
 
+	fp := a.hash(a.scratch)
 	for id := a.constraintHead[fp]; id != 0; id = a.constraintNext[id] {
 		if a.constraintEqual(id, n) {
 			return id
@@ -906,4 +906,29 @@ func checkFloatBounds(v float64, flags boundFlags, minv, maxv float64) bool {
 		}
 	}
 	return true
+}
+
+// handles:
+//   - [..., N]   U [N+1, ...] = (int)
+//   - [N, ...]   U [N+M, ...] = [N, ...]
+//   - [..., N+M] U [..., N]   = [..., N]
+func unionDiscreteBounds(x, y intBounds) (intBounds, bool) {
+	// NOTE(i4k): when there are gaps in the cross of x and y intervals the union
+	// is not representable.
+	if x.flags&hasMax != 0 && y.flags&hasMin != 0 && x.max < y.min && x.max+1 < y.min {
+		return intBounds{}, false
+	}
+	if y.flags&hasMax != 0 && x.flags&hasMin != 0 && y.max < x.min && y.max+1 < x.min {
+		return intBounds{}, false
+	}
+	var r intBounds
+	if x.flags&hasMin != 0 && y.flags&hasMin != 0 {
+		r.flags |= hasMin
+		r.min = min(x.min, y.min)
+	}
+	if x.flags&hasMax != 0 && y.flags&hasMax != 0 {
+		r.flags |= hasMax
+		r.max = max(x.max, y.max)
+	}
+	return r, true
 }

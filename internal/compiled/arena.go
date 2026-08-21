@@ -328,7 +328,7 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 	//
 	// special cases:
 	//   6.  true | false		=> (bool)
-	//   7.  (A, C1) | (A, C2)	=> (A, C1 || C2)
+	//   7.  (A, C1) | (A, C2)	=> (A, union(C1 || C2)) iff union is representable.
 	//
 	// TODO(i4k): implement 7.
 
