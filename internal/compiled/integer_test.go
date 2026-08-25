@@ -2,6 +2,7 @@ package compiled
 
 import (
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"testing"
@@ -98,5 +99,32 @@ func TestIntegerLiteralFastPath(t *testing.T) {
 				t.Fatalf("unexpected number of interned bytes: %d, expected zero", got)
 			}
 		})
+	}
+}
+
+func TestBigIntCompareInts(t *testing.T) {
+	t.Parallel()
+
+	// NOTE(i4k): This is a sanity check in case we change the bigIntBytes implementation.
+	// in order to compareInts() work, the bytes must be stored in an efficient comparable way.
+	// Here we have a basic test checking if the implementation matches the [big.Int.Cmp] method.
+	var x big.Int
+	_, ok := x.SetString(google, 10)
+	if !ok {
+		t.Fatal("faile to create big.Int")
+	}
+
+	y := big.NewInt(1)
+	var z big.Int
+	z.Add(&x, y)
+
+	a := NewArena()
+	xx := compileRawInt(t, a, google)
+	zz := compileRawInt(t, a, z.String())
+	if got := a.compareInts(a.Node(xx).data, a.Node(zz).data); got != x.Cmp(&z) {
+		t.Fatalf("compareInts(x, z) != x.Cmp(z): %d != %d", got, x.Cmp(&z))
+	}
+	if got := a.compareInts(a.Node(zz).data, a.Node(xx).data); got != z.Cmp(&x) {
+		t.Fatalf("compareInts(z, x) != z.Cmp(x): %d != %d", got, z.Cmp(&x))
 	}
 }
