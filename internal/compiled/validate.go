@@ -1,6 +1,7 @@
 package compiled
 
 import (
+	"math/big"
 	"sort"
 	"strconv"
 	"unicode/utf8"
@@ -34,14 +35,24 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 	case BoolLit:
 		return t.Node(value).Kind() == ast.Bool && t.Bool(value) == (n.data != 0)
 	case IntLit:
-		v, ok := astInt64(t, value)
-		return ok && v == a.ints[n.data]
+		if n.data > 0 {
+			v, ok := astInt64(t, value)
+			return ok && v == a.ints[n.data]
+		}
+		if t.Node(value).Kind() != ast.Int {
+			return false
+		}
+		var v big.Int
+		if _, ok := v.SetString(t.Int(value), 10); !ok {
+			return false
+		}
+		return a.equalBigInts(n.data, v.Sign() < 0, v.Bytes())
 	case FloatLit:
 		if t.Node(value).Kind() != ast.Float {
 			return false
 		}
 		v, err := strconv.ParseFloat(t.Float(value), 64)
-		return err == nil && floatEqual(v, a.numbers[n.data])
+		return err == nil && floatEqual(v, a.floats[n.data])
 	case StringLit:
 		return t.Node(value).Kind() == ast.String && t.String(value) == a.StringValue(StringID(n.data))
 	case List:

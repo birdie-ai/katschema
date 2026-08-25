@@ -46,7 +46,8 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 	case BoolLit:
 		return bn.kind == Bool
 	case IntLit:
-		return bn.kind == Int || bn.kind == Float
+		// NOTE(i4k): The `(int)` type is still int64.
+		return x.isIntSmall(an.data) && (bn.kind == Int || bn.kind == Float)
 	case FloatLit:
 		return bn.kind == Float
 	case StringLit:

@@ -1,6 +1,7 @@
 package compiled
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/birdie-ai/katschema/ks"
@@ -22,6 +23,25 @@ func TestValidation(t *testing.T) {
 		ks.Le,
 		ks.IntExpr(100),
 	))
+
+	var googleBigInt big.Int
+	_, ok := googleBigInt.SetString(google, 10)
+	if !ok {
+		t.Fatal("failed to encode google bigInt")
+	}
+
+	/*
+		TODO(i4k): not yet! In this PR, the (int) type is not the mathematical Z type.
+		var nextGoogleBigInt big.Int
+		nextGoogleBigInt.Add(&googleBigInt, big.NewInt(1))
+
+		// (int, 0 <= x <= 10^100)
+		bigIntRange := ks.Where(ks.Int(), ks.Binary(
+			ks.Binary(ks.IntExpr(0), ks.Le, ks.X()),
+			ks.Le,
+			ks.ValueExpr(ks.LitBigInt(&googleBigInt)),
+		))
+	*/
 
 	for _, tc := range []testcase{
 		{
@@ -150,6 +170,21 @@ func TestValidation(t *testing.T) {
 			value:  ks.LitInt(1337),
 			want:   false,
 		},
+		{
+			name:   "bigInt outside range is rejected",
+			schema: ranged,
+			value:  ks.LitBigInt(&googleBigInt),
+			want:   false,
+		},
+		/*
+			     * TODO(i4k): not yet! In this PR, the (int) type is not the mathematical Z type.
+				 * {
+				 * 	name:   "valid upper bound in bigInt range",
+				 * 	schema: bigIntRange,
+				 * 	value:  ks.LitBigInt(&googleBigInt),
+				 * 	want:   true,
+				 * },
+		*/
 		{
 			name: "int: value has valid in enum",
 			schema: ks.With(

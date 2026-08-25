@@ -3,6 +3,7 @@ package compiled
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 
 	"github.com/birdie-ai/katschema/parser/ast"
@@ -86,11 +87,15 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 }
 
 func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
-	v, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		return 0, c.errorf(id, "integer literal %q is outside int64", raw)
+	if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return c.a.internInt(v), nil
 	}
-	return c.a.internInt(v), nil
+	var v big.Int
+	if _, ok := v.SetString(raw, 10); !ok {
+		return 0, c.errorf(id, "invalid integer literal %q", raw)
+	}
+	// NOTE(i4k): v.Bytes() usage is important here! it gives a big-endian encoded big int.
+	return c.a.internBigInt(v.Sign() < 0, v.Bytes()), nil
 }
 
 func (c *compiler) floatLiteral(id ast.NodeID, raw string) (TypeID, error) {

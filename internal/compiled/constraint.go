@@ -782,15 +782,9 @@ func (a *Arena) compareLiteral(x, y TypeID) int {
 			return 1
 		}
 	case IntLit:
-		xv, yv := a.ints[xn.data], a.ints[yn.data]
-		if xv < yv {
-			return -1
-		}
-		if xv > yv {
-			return 1
-		}
+		return a.compareInts(xn.data, yn.data)
 	case FloatLit:
-		xv, yv := a.numbers[xn.data], a.numbers[yn.data]
+		xv, yv := a.floats[xn.data], a.floats[yn.data]
 		if xv < yv {
 			return -1
 		}
@@ -820,7 +814,8 @@ func (a *Arena) baseKind(id TypeID) Kind {
 
 func (a *Arena) literalCompat(base, lit TypeID) bool {
 	bk := a.baseKind(base)
-	lk := a.Node(lit).kind
+	ln := a.Node(lit)
+	lk := ln.kind
 	switch bk {
 	case Any:
 		return true
@@ -829,7 +824,7 @@ func (a *Arena) literalCompat(base, lit TypeID) bool {
 	case Bool:
 		return lk == BoolLit
 	case Int:
-		return lk == IntLit
+		return lk == IntLit && a.isIntSmall(ln.data)
 	case Float:
 		// TODO(i4k): not sure if we should allow int here but allowing makes it easier to use...
 		// for context, this is used in several cases.
@@ -837,7 +832,7 @@ func (a *Arena) literalCompat(base, lit TypeID) bool {
 		//      maybe we should require (float, x == 3.0) to be explicit.
 		// ex2: (float, x IN [1, 2])
 		//      maybe we should require (float, x IN [1.0, 2.0])
-		return lk == IntLit || lk == FloatLit
+		return lk == FloatLit || (lk == IntLit && a.isIntSmall(ln.data))
 	case String:
 		return lk == StringLit
 	}
@@ -847,7 +842,11 @@ func (a *Arena) literalCompat(base, lit TypeID) bool {
 func (a *Arena) literalSatisfiesNormConstraint(id TypeID, n normConstraint) bool {
 	node := a.Node(id)
 	if n.ints.flags != 0 {
-		if node.kind != IntLit || !checkIntBounds(a.ints[node.data], n.ints.flags, n.ints.min, n.ints.max) {
+		if node.kind != IntLit {
+			return false
+		}
+		v, ok := a.int64(node.data)
+		if !ok || !checkIntBounds(v, n.ints.flags, n.ints.min, n.ints.max) {
 			return false
 		}
 	}
@@ -855,9 +854,13 @@ func (a *Arena) literalSatisfiesNormConstraint(id TypeID, n normConstraint) bool
 		var v float64
 		switch node.kind {
 		case IntLit:
-			v = float64(a.ints[node.data])
+			i, ok := a.int64(node.data)
+			if !ok {
+				return false
+			}
+			v = float64(i)
 		case FloatLit:
-			v = a.numbers[node.data]
+			v = a.floats[node.data]
 		default:
 			return false
 		}
