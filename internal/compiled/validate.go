@@ -154,8 +154,10 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 	}
 	d := a.constraints[id]
 	if d.flags&constraintInt != 0 {
-		v, ok := astInt64(t, value)
-		if !ok || !checkIntBounds(v, d.intFlags, d.intMin, d.intMax) {
+		if t.Node(value).Kind() != ast.Int || !a.rawIntWithinBounds(
+			t.Int(value),
+			intBounds{flags: d.intFlags, min: d.intMin, max: d.intMax},
+		) {
 			return false
 		}
 	}
@@ -194,7 +196,15 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 }
 
 func astInt(t *ast.Tree, id ast.NodeID) bool {
-	_, ok := astInt64(t, id)
+	if t.Node(id).Kind() != ast.Int {
+		return false
+	}
+	raw := t.Int(id)
+	if _, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return true
+	}
+	var v big.Int
+	_, ok := v.SetString(raw, 10)
 	return ok
 }
 

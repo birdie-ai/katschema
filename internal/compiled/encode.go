@@ -43,6 +43,25 @@ func putBigInt(p []byte, negative bool, mag []byte) []byte {
 	return append(p, mag...)
 }
 
+func (a *Arena) putIntLiteral(p []byte, id TypeID) []byte {
+	if id == 0 {
+		return put64(p, 0)
+	}
+	n := a.Node(id)
+	if n.kind != IntLit {
+		panic(n.kind)
+	}
+	ikind := integerKind(n.data)
+	// NOTE(i4k): we don't need to encode ikind because AFAICS there's no ambiguity
+	// as we only store the big int if v > math.MaxInt64 and then their representation
+	// is always a mismatch.
+	if ikind == sint {
+		return put64(p, a.int64(n.data))
+	}
+	v, mag := a.bigIntData(n.data)
+	return putBigInt(p, v.negative(), mag)
+}
+
 // this function is weird but it canonicalize as +0 in the case of -0.
 // TODO(i4k): should we normalize NaNs?
 func canonicalFloat(v float64) float64 {

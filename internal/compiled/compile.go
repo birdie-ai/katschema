@@ -95,7 +95,7 @@ func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
 		return 0, c.errorf(id, "invalid integer literal %q", raw)
 	}
 	// NOTE(i4k): v.Bytes() usage is important here! it gives a big-endian encoded big int.
-	return c.a.internBigInt(v.Sign() < 0, v.Bytes()), nil
+	return c.a.internRawBigInt(v.Sign() < 0, v.Bytes()), nil
 }
 
 func (c *compiler) floatLiteral(id ast.NodeID, raw string) (TypeID, error) {
@@ -212,6 +212,19 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 		return 0, false, err
 	}
 
+	// NOTE(i4k): When you do (int8, x >= 0) it actually means (int, x >= 0, x <= 127) because
+	// (int8) is an alias for (int, -128 <= x <= 127).
+	// So here we need to pull their intrinsic range into the same normalizer of this schema
+	// refinement.
+	initial := normConstraint{}
+	if n := c.a.Node(base); n.kind == Refined {
+		r := c.a.refinements[n.data]
+		if c.a.Node(r.base).kind == Int {
+			initial = c.a.intConstraintNorm(r.constraint)
+			base = r.base
+		}
+	}
+
 	optional, err := c.optionality(s.Clauses)
 	if err != nil {
 		return 0, false, err
@@ -219,8 +232,7 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	if optional && !field {
 		return 0, false, c.error(id, ErrOptionalUnexpected)
 	}
-
-	constraint, impossible, err := c.normalizeConstraints(base, s.Clauses)
+	constraint, impossible, err := c.extendNormalizeConstraints(base, initial, s.Clauses)
 	if err != nil {
 		return 0, false, err
 	}
@@ -233,7 +245,11 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 	switch c.t.Node(id).Kind() {
 	case ast.Name:
-		switch c.t.Name(id) {
+		name := c.t.Name(id)
+		if typ, ok := c.a.intBuiltinType(name); ok {
+			return typ, nil
+		}
+		switch name {
 		case "any":
 			return c.a.Any(), nil
 		case "never":
