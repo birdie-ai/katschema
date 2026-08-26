@@ -64,7 +64,7 @@ func (a *Arena) int64(data int32) int64 {
 }
 
 // bigInt returns a big.Int representation of the stored bigInt.
-// NOTE(i4k): it's very important that this *big.Int pointer is a fresh allocation
+// NOTE(i4k): It must be an invariance that returned *big.Int pointer is a fresh new allocation!
 // because big.Int manipulation methods (like Add(), Sub(), etc) internally mutate
 // the pointer and we don't want that our constraint bounds check logic manipulate
 // the real TypeID node.
