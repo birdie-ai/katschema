@@ -12,6 +12,12 @@ import (
 
 type intBounds struct {
 	flags boundFlags
+	min   TypeID
+	max   TypeID
+}
+
+type lenBounds struct {
+	flags boundFlags
 	min   int64
 	max   int64
 }
@@ -25,7 +31,7 @@ type floatBounds struct {
 type normConstraint struct {
 	ints   intBounds
 	floats floatBounds
-	length intBounds
+	length lenBounds
 	enum   []TypeID // nil means no enum restriction; empty non-nil means impossible.
 }
 
@@ -55,8 +61,8 @@ type constraintData struct {
 	flags uint8
 
 	intFlags boundFlags
-	intMin   int64
-	intMax   int64
+	intMin   TypeID
+	intMax   TypeID
 
 	floatFlags boundFlags
 	numMin     float64
@@ -77,7 +83,11 @@ const (
 )
 
 func (c *compiler) normalizeConstraints(base TypeID, clauses []ast.NodeID) (ct ConstraintID, impossible bool, err error) {
-	n := normalizer{c: c, base: base}
+	return c.extendNormalizeConstraints(base, normConstraint{}, clauses)
+}
+
+func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstraint, clauses []ast.NodeID) (ct ConstraintID, impossible bool, err error) {
+	n := normalizer{c: c, base: base, n: initial}
 	for _, id := range clauses {
 		if c.t.Node(id).Kind() != ast.Constraint {
 			continue
@@ -386,10 +396,9 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 		if litKind != ast.Int {
 			return n.c.errorf(literal, "int constraint requires an integer bound")
 		}
-		raw := n.c.t.Int(literal)
-		v, err := strconv.ParseInt(raw, 10, 64)
+		v, err := n.c.intLiteral(literal, n.c.t.Int(literal))
 		if err != nil {
-			return n.c.errorf(literal, "integer bound %q is outside int64", raw)
+			return err
 		}
 		n.applyInt(op, v)
 		return nil
@@ -429,37 +438,29 @@ func (n *normalizer) lengthBound(op token.Kind, literal ast.NodeID) error {
 	return nil
 }
 
-func (n *normalizer) applyInt(op token.Kind, v int64) {
+func (n *normalizer) applyInt(op token.Kind, v TypeID) {
 	// NOTE(i4k): integers are discrete so we can normalize:
 	//   (int, x > 0)   -> (int, x >= 1)
 	//   (int, x < 100) -> (int, x <= 99)
 	// and then internally they are all inclusive bounds.
 	switch op {
 	case token.Gt:
-		if v == math.MaxInt64 {
-			n.impossible = true
-			return
-		}
-		v++
+		v = n.c.a.nextIntLiteral(v)
 		op = token.Ge
 	case token.Lt:
-		if v == math.MinInt64 {
-			n.impossible = true
-			return
-		}
-		v--
+		v = n.c.a.prevIntLiteral(v)
 		op = token.Le
 	}
 
 	r := &n.n.ints
 	switch op {
 	case token.Ge:
-		if r.flags&hasMin == 0 || v > r.min {
+		if r.flags&hasMin == 0 || n.c.a.compareLiteral(v, r.min) > 0 {
 			r.min = v
 			r.flags |= hasMin
 		}
 	case token.Le:
-		if r.flags&hasMax == 0 || v < r.max {
+		if r.flags&hasMax == 0 || n.c.a.compareLiteral(v, r.max) < 0 {
 			r.max = v
 			r.flags |= hasMax
 		}
@@ -563,7 +564,7 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 	if n.impossible {
 		return 0, true, nil
 	}
-	if impossibleIntBounds(n.n.ints) || impossibleFloatBounds(n.n.floats) || impossibleIntBounds(n.n.length) {
+	if n.c.a.impossibleIntBounds(n.n.ints) || impossibleFloatBounds(n.n.floats) || impossibleLenBounds(n.n.length) {
 		return 0, true, nil
 	}
 
@@ -571,8 +572,8 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 	if n.n.enum == nil {
 		switch kind {
 		case Int:
-			if singleInt(n.n.ints) {
-				n.n.enum = []TypeID{n.c.a.internInt(n.n.ints.min)}
+			if n.c.a.singleInt(n.n.ints) {
+				n.n.enum = []TypeID{n.n.ints.min}
 				n.n.ints = intBounds{}
 			}
 		case Float:
@@ -599,7 +600,7 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 		// We can check for clauses conflicting with the enums later and fail in such cases.
 		n.n.ints = intBounds{}
 		n.n.floats = floatBounds{}
-		n.n.length = intBounds{}
+		n.n.length = lenBounds{}
 	}
 
 	if n.n.ints.flags == 0 && n.n.floats.flags == 0 && n.n.length.flags == 0 && n.n.enum == nil {
@@ -608,7 +609,14 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 	return n.c.a.internConstraint(n.n), false, nil
 }
 
-func impossibleIntBounds(r intBounds) bool {
+func (a *Arena) impossibleIntBounds(r intBounds) bool {
+	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
+		return false
+	}
+	return a.compareLiteral(r.min, r.max) > 0
+}
+
+func impossibleLenBounds(r lenBounds) bool {
 	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
 		return false
 	}
@@ -625,7 +633,7 @@ func impossibleFloatBounds(r floatBounds) bool {
 	return r.min == r.max && (r.flags&minInclusive == 0 || r.flags&maxInclusive == 0)
 }
 
-func singleInt(r intBounds) bool {
+func (a *Arena) singleInt(r intBounds) bool {
 	return r.flags&(hasMin|hasMax) == hasMin|hasMax && r.min == r.max
 }
 
@@ -638,8 +646,8 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 	a.scratch = append(a.scratch, encodingVersion, 0xc1)
 	if n.ints.flags != 0 {
 		a.scratch = append(a.scratch, constraintInt, byte(n.ints.flags))
-		a.scratch = put64(a.scratch, n.ints.min)
-		a.scratch = put64(a.scratch, n.ints.max)
+		a.scratch = a.putIntLiteral(a.scratch, n.ints.min)
+		a.scratch = a.putIntLiteral(a.scratch, n.ints.max)
 	}
 	if n.floats.flags != 0 {
 		a.scratch = append(a.scratch, constraintFloat, byte(n.floats.flags))
@@ -824,7 +832,7 @@ func (a *Arena) literalCompat(base, lit TypeID) bool {
 	case Bool:
 		return lk == BoolLit
 	case Int:
-		return lk == IntLit && a.isIntSmall(ln.data)
+		return lk == IntLit
 	case Float:
 		// TODO(i4k): not sure if we should allow int here but allowing makes it easier to use...
 		// for context, this is used in several cases.
@@ -842,11 +850,7 @@ func (a *Arena) literalCompat(base, lit TypeID) bool {
 func (a *Arena) literalSatisfiesNormConstraint(id TypeID, n normConstraint) bool {
 	node := a.Node(id)
 	if n.ints.flags != 0 {
-		if node.kind != IntLit {
-			return false
-		}
-		v, ok := a.int64(node.data)
-		if !ok || !checkIntBounds(v, n.ints.flags, n.ints.min, n.ints.max) {
+		if node.kind != IntLit || !a.checkIntLiteralBounds(id, n.ints) {
 			return false
 		}
 	}
@@ -854,11 +858,7 @@ func (a *Arena) literalSatisfiesNormConstraint(id TypeID, n normConstraint) bool
 		var v float64
 		switch node.kind {
 		case IntLit:
-			i, ok := a.int64(node.data)
-			if !ok {
-				return false
-			}
-			v = float64(i)
+			v = float64(a.int64(node.data))
 		case FloatLit:
 			v = a.floats[node.data]
 		default:
@@ -876,6 +876,29 @@ func (a *Arena) literalSatisfiesNormConstraint(id TypeID, n normConstraint) bool
 		if !checkIntBounds(l, n.length.flags, n.length.min, n.length.max) {
 			return false
 		}
+	}
+	return true
+}
+
+func (a *Arena) intConstraintNorm(id ConstraintID) normConstraint {
+	d := a.constraints[id]
+	n := normConstraint{}
+	if d.flags&constraintInt != 0 {
+		n.ints = intBounds{flags: d.intFlags, min: d.intMin, max: d.intMax}
+	}
+	return n
+}
+
+func (a *Arena) checkIntLiteralBounds(id TypeID, r intBounds) bool {
+	n := a.Node(id)
+	if n.kind != IntLit {
+		return false
+	}
+	if r.flags&hasMin != 0 && a.compareInts(n.data, a.Node(r.min).data) < 0 {
+		return false
+	}
+	if r.flags&hasMax != 0 && a.compareInts(n.data, a.Node(r.max).data) > 0 {
+		return false
 	}
 	return true
 }

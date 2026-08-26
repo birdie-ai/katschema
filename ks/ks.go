@@ -80,6 +80,15 @@ func Any() Value    { return Type("any") }
 func Never() Value  { return Type("never") }
 func Bool() Value   { return Type("bool") }
 func Int() Value    { return Type("int") }
+func Int8() Value   { return Type("int8") }
+func Int16() Value  { return Type("int16") }
+func Int32() Value  { return Type("int32") }
+func Int64() Value  { return Type("int64") }
+func Uint() Value   { return Type("uint") }
+func Uint8() Value  { return Type("uint8") }
+func Uint16() Value { return Type("uint16") }
+func Uint32() Value { return Type("uint32") }
+func Uint64() Value { return Type("uint64") }
 func Float() Value  { return Type("float") }
 func String() Value { return Type("string") }
 

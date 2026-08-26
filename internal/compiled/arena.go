@@ -1,6 +1,7 @@
 package compiled
 
 import (
+	"math/big"
 	"sort"
 )
 
@@ -210,7 +211,7 @@ func (a *Arena) internInt(v int64) TypeID {
 	return a.appendNode(Node{kind: IntLit, data: i}, fp, a.hashHead[fp])
 }
 
-func (a *Arena) internBigInt(negative bool, mag []byte) TypeID {
+func (a *Arena) internRawBigInt(negative bool, mag []byte) TypeID {
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(IntLit))
 	a.scratch = putBigInt(a.scratch, negative, mag)
@@ -227,6 +228,13 @@ func (a *Arena) internBigInt(negative bool, mag []byte) TypeID {
 	a.bigIntBytes = append(a.bigIntBytes, mag...)
 	a.bigInts = append(a.bigInts, makeBigInt(off, mag, negative))
 	return a.appendNode(Node{kind: IntLit, data: -i}, fp, a.hashHead[fp])
+}
+
+func (a *Arena) internBigInt(v *big.Int) TypeID {
+	if v.IsInt64() {
+		return a.internInt(v.Int64())
+	}
+	return a.internRawBigInt(v.Sign() < 0, v.Bytes())
 }
 
 func (a *Arena) internFloat(v float64) TypeID {

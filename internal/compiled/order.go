@@ -46,14 +46,11 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 	case BoolLit:
 		return bn.kind == Bool
 	case IntLit:
-		// NOTE(i4k): The `(int)` type is still int64.
-		return x.isIntSmall(an.data) && (bn.kind == Int || bn.kind == Float)
+		return bn.kind == Int
 	case FloatLit:
 		return bn.kind == Float
 	case StringLit:
 		return bn.kind == String
-	case Int:
-		return bn.kind == Float
 	case List:
 		return bn.kind == List && x.Subtype(TypeID(an.data), TypeID(bn.data))
 	case Tuple:
@@ -152,7 +149,7 @@ func (x *Arena) literalSatisfiesConstraint(lit TypeID, id ConstraintID) bool {
 		n.floats = floatBounds{flags: d.floatFlags, min: d.numMin, max: d.numMax}
 	}
 	if d.flags&constraintLen != 0 {
-		n.length = intBounds{flags: d.lenFlags, min: d.lenMin, max: d.lenMax}
+		n.length = lenBounds{flags: d.lenFlags, min: d.lenMin, max: d.lenMax}
 	}
 	if !x.literalSatisfiesNormConstraint(lit, n) {
 		return false
@@ -190,7 +187,7 @@ func (x *Arena) constraintSubset(a, b ConstraintID) bool {
 	}
 
 	if bd.flags&constraintInt != 0 {
-		if ad.flags&constraintInt == 0 || !intBoundsSubset(ad, bd) {
+		if ad.flags&constraintInt == 0 || !x.intBoundsSubset(ad, bd) {
 			return false
 		}
 	}
@@ -207,9 +204,23 @@ func (x *Arena) constraintSubset(a, b ConstraintID) bool {
 	return true
 }
 
-func intBoundsSubset(a, b constraintData) bool {
-	return lowerIntStronger(a.intFlags, a.intMin, b.intFlags, b.intMin) &&
-		upperIntStronger(a.intFlags, a.intMax, b.intFlags, b.intMax)
+func (x *Arena) intBoundsSubset(a, b constraintData) bool {
+	return x.lowerIntStronger(a.intFlags, a.intMin, b.intFlags, b.intMin) &&
+		x.upperIntStronger(a.intFlags, a.intMax, b.intFlags, b.intMax)
+}
+
+func (x *Arena) lowerIntStronger(af boundFlags, av TypeID, bf boundFlags, bv TypeID) bool {
+	if bf&hasMin == 0 {
+		return true
+	}
+	return af&hasMin != 0 && x.compareLiteral(av, bv) >= 0
+}
+
+func (x *Arena) upperIntStronger(af boundFlags, av TypeID, bf boundFlags, bv TypeID) bool {
+	if bf&hasMax == 0 {
+		return true
+	}
+	return af&hasMax != 0 && x.compareLiteral(av, bv) <= 0
 }
 
 func numberBoundsSubset(a, b constraintData) bool {

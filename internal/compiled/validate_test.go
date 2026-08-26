@@ -1,6 +1,7 @@
 package compiled
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
@@ -30,18 +31,15 @@ func TestValidation(t *testing.T) {
 		t.Fatal("failed to encode google bigInt")
 	}
 
-	/*
-		TODO(i4k): not yet! In this PR, the (int) type is not the mathematical Z type.
-		var nextGoogleBigInt big.Int
-		nextGoogleBigInt.Add(&googleBigInt, big.NewInt(1))
+	var nextGoogleBigInt big.Int
+	nextGoogleBigInt.Add(&googleBigInt, big.NewInt(1))
 
-		// (int, 0 <= x <= 10^100)
-		bigIntRange := ks.Where(ks.Int(), ks.Binary(
-			ks.Binary(ks.IntExpr(0), ks.Le, ks.X()),
-			ks.Le,
-			ks.ValueExpr(ks.LitBigInt(&googleBigInt)),
-		))
-	*/
+	// (int, 0 <= x <= 10^100)
+	bigIntRange := ks.Where(ks.Int(), ks.Binary(
+		ks.Binary(ks.IntExpr(0), ks.Le, ks.X()),
+		ks.Le,
+		ks.ValueExpr(ks.LitBigInt(&googleBigInt)),
+	))
 
 	for _, tc := range []testcase{
 		{
@@ -176,15 +174,42 @@ func TestValidation(t *testing.T) {
 			value:  ks.LitBigInt(&googleBigInt),
 			want:   false,
 		},
-		/*
-			     * TODO(i4k): not yet! In this PR, the (int) type is not the mathematical Z type.
-				 * {
-				 * 	name:   "valid upper bound in bigInt range",
-				 * 	schema: bigIntRange,
-				 * 	value:  ks.LitBigInt(&googleBigInt),
-				 * 	want:   true,
-				 * },
-		*/
+		{
+			name:   "valid upper bound in bigInt range",
+			schema: bigIntRange,
+			value:  ks.LitBigInt(&googleBigInt),
+			want:   true,
+		},
+		{
+			name:   "valid value inside int8",
+			schema: ks.Int8(),
+			value:  ks.LitInt(100),
+			want:   true,
+		},
+		{
+			name:   "math.MinInt8 is valid int8",
+			schema: ks.Int8(),
+			value:  ks.LitInt(math.MinInt8),
+			want:   true,
+		},
+		{
+			name:   "math.MaxInt8 is valid int8",
+			schema: ks.Int8(),
+			value:  ks.LitInt(math.MaxInt8),
+			want:   true,
+		},
+		{
+			name:   "math.MaxInt8+1 is outside int8 bounds",
+			schema: ks.Int8(),
+			value:  ks.LitInt(math.MaxInt8 + 1),
+			want:   false,
+		},
+		{
+			name:   "math.MinInt8-1 is outside int8 bounds",
+			schema: ks.Int8(),
+			value:  ks.LitInt(math.MinInt8 - 1),
+			want:   false,
+		},
 		{
 			name: "int: value has valid in enum",
 			schema: ks.With(
@@ -463,10 +488,202 @@ func TestValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := NewArena()
 			typ := compile(t, a, tc.schema)
-			values, root := build(t, tc.value)
-			if got := a.Valid(typ, values, root); got != tc.want {
+			tree, val := build(t, tc.value)
+			if got := a.Valid(typ, tree, val); got != tc.want {
 				t.Fatalf("Valid = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestValidIntrinsicIntegerBounds(t *testing.T) {
+	t.Parallel()
+
+	type testcase struct {
+		schema  ks.Value
+		valid   []ks.Value
+		invalid []ks.Value
+	}
+
+	var googleBigInt big.Int
+	_, ok := googleBigInt.SetString(google, 10)
+	if !ok {
+		t.Fatal("unreachable")
+	}
+
+	nextMaxInt64 := big.NewInt(math.MaxInt64)
+	nextMaxInt64.Add(nextMaxInt64, big.NewInt(1))
+
+	prevMinInt64 := big.NewInt(math.MinInt64)
+	prevMinInt64.Add(prevMinInt64, big.NewInt(-1))
+
+	var maxUint64 big.Int
+	maxUint64.SetUint64(uint64(math.MaxUint64))
+
+	a := NewArena()
+	for _, tc := range []testcase{
+		{
+			schema: ks.Int(),
+			valid: []ks.Value{
+				ks.LitInt(math.MinInt64),
+				ks.LitInt(0),
+				ks.LitInt(100),
+				ks.LitInt(math.MaxInt64),
+				ks.LitBigInt(&googleBigInt),
+			},
+			invalid: []ks.Value{
+				ks.LitFloat(10),
+			},
+		},
+		{
+			schema: ks.Int8(),
+			valid: []ks.Value{
+				ks.LitInt(math.MinInt8),
+				ks.LitInt(0),
+				ks.LitInt(100),
+				ks.LitInt(math.MaxInt8),
+			},
+			invalid: []ks.Value{
+				ks.LitInt(math.MinInt8 - 1),
+				ks.LitInt(math.MaxInt8 + 1),
+				ks.LitInt(math.MinInt32),
+				ks.LitInt(math.MaxInt32),
+				ks.LitInt(math.MinInt64),
+				ks.LitInt(math.MaxInt64),
+				ks.LitBigInt(&googleBigInt),
+				ks.LitFloat(10),
+			},
+		},
+		{
+			schema: ks.Int16(),
+			valid: []ks.Value{
+				ks.LitInt(math.MinInt16),
+				ks.LitInt(0),
+				ks.LitInt(100),
+				ks.LitInt(math.MaxInt16),
+			},
+			invalid: []ks.Value{
+				ks.LitInt(math.MinInt16 - 1),
+				ks.LitInt(math.MaxInt16 + 1),
+				ks.LitInt(math.MinInt32),
+				ks.LitInt(math.MaxInt32),
+				ks.LitInt(math.MinInt64),
+				ks.LitInt(math.MaxInt64),
+				ks.LitBigInt(&googleBigInt),
+				ks.LitFloat(10),
+			},
+		},
+		{
+			schema: ks.Int32(),
+			valid: []ks.Value{
+				ks.LitInt(math.MinInt32),
+				ks.LitInt(0),
+				ks.LitInt(100),
+				ks.LitInt(math.MaxInt32),
+			},
+			invalid: []ks.Value{
+				ks.LitInt(math.MinInt32 - 1),
+				ks.LitInt(math.MaxInt32 + 1),
+				ks.LitInt(math.MinInt64),
+				ks.LitInt(math.MaxInt64),
+				ks.LitBigInt(&googleBigInt),
+				ks.LitFloat(10),
+			},
+		},
+		{
+			schema: ks.Int64(),
+			valid: []ks.Value{
+				ks.LitInt(math.MinInt64),
+				ks.LitInt(0),
+				ks.LitInt(100),
+				ks.LitInt(math.MaxInt64),
+			},
+			invalid: []ks.Value{
+				ks.LitBigInt(nextMaxInt64),
+				ks.LitBigInt(prevMinInt64),
+				ks.LitBigInt(&googleBigInt),
+				ks.LitFloat(10),
+			},
+		},
+		{
+			schema: ks.Uint8(),
+			valid: []ks.Value{
+				ks.LitInt(0),
+				ks.LitInt(100),
+				ks.LitInt(math.MaxUint8),
+			},
+			invalid: []ks.Value{
+				ks.LitInt(-1),
+				ks.LitInt(math.MaxUint8 + 1),
+				ks.LitInt(math.MinInt32),
+				ks.LitInt(math.MaxInt32),
+				ks.LitInt(math.MinInt64),
+				ks.LitInt(math.MaxInt64),
+				ks.LitBigInt(&googleBigInt),
+				ks.LitFloat(10),
+			},
+		},
+		{
+			schema: ks.Uint16(),
+			valid: []ks.Value{
+				ks.LitInt(0),
+				ks.LitInt(100),
+				ks.LitInt(math.MaxUint16),
+			},
+			invalid: []ks.Value{
+				ks.LitInt(-1),
+				ks.LitInt(math.MaxUint16 + 1),
+				ks.LitInt(math.MinInt32),
+				ks.LitInt(math.MaxInt32),
+				ks.LitInt(math.MinInt64),
+				ks.LitInt(math.MaxInt64),
+				ks.LitBigInt(&googleBigInt),
+				ks.LitFloat(10),
+			},
+		},
+		{
+			schema: ks.Uint32(),
+			valid: []ks.Value{
+				ks.LitInt(0),
+				ks.LitInt(100),
+				ks.LitInt(math.MaxUint32),
+			},
+			invalid: []ks.Value{
+				ks.LitInt(-1),
+				ks.LitInt(math.MaxUint32 + 1),
+				ks.LitInt(math.MinInt64),
+				ks.LitInt(math.MaxInt64),
+				ks.LitBigInt(&googleBigInt),
+				ks.LitFloat(10),
+			},
+		},
+		{
+			schema: ks.Uint64(),
+			valid: []ks.Value{
+				ks.LitInt(0),
+				ks.LitInt(100),
+				ks.LitBigInt(nextMaxInt64),
+				ks.LitBigInt(&maxUint64),
+			},
+			invalid: []ks.Value{
+				ks.LitInt(-1),
+				ks.LitBigInt(&googleBigInt),
+				ks.LitFloat(10),
+			},
+		},
+	} {
+		typ := compile(t, a, tc.schema)
+		for _, v := range tc.valid {
+			tree, val := build(t, v)
+			if ok := a.Valid(typ, tree, val); !ok {
+				t.Fatalf("Valid = %v, want true", ok)
+			}
+		}
+		for _, v := range tc.invalid {
+			tree, val := build(t, v)
+			if ok := a.Valid(typ, tree, val); ok {
+				t.Fatalf("Valid = %v, want false", ok)
+			}
+		}
 	}
 }

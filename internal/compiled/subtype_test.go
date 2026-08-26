@@ -1,6 +1,7 @@
 package compiled
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/birdie-ai/katschema/ks"
@@ -15,6 +16,12 @@ func TestSubtype(t *testing.T) {
 		a    ks.Value
 		b    ks.Value
 		want bool
+	}
+
+	var googleBigInt big.Int
+	_, ok := googleBigInt.SetString(google, 10)
+	if !ok {
+		t.Fatal("unreachable")
 	}
 
 	for _, tc := range []testcase{
@@ -51,6 +58,18 @@ func TestSubtype(t *testing.T) {
 		{
 			name: "any type is subtype of itself",
 			a:    ks.Int(),
+			b:    ks.Int(),
+			want: true,
+		},
+		{
+			name: "smaller literal int is smaller than (int)",
+			a:    ks.LitInt(1),
+			b:    ks.Int(),
+			want: true,
+		},
+		{
+			name: "bigInt literal is smaller than (int)",
+			a:    ks.LitBigInt(&googleBigInt),
 			b:    ks.Int(),
 			want: true,
 		},

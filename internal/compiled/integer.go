@@ -1,6 +1,17 @@
 package compiled
 
-import "bytes"
+import (
+	"bytes"
+	"math"
+	"math/big"
+)
+
+type intKind bool
+
+const (
+	sint intKind = false
+	bint intKind = true
+)
 
 // bigInt stores the magnitude of an integer that does not fit into int64.
 // The bigInt bytes are big-endian encoded. Check [math/big.Int.Bytes](https://cs.opensource.google/go/go/+/refs/tags/go1.27.0:src/math/big/int.go;l=607-616).
@@ -11,6 +22,17 @@ import "bytes"
 type bigInt struct {
 	off  int32
 	size int32
+}
+
+func integerKind(data int32) intKind {
+	switch {
+	case data > 0:
+		return sint
+	case data < 0:
+		return bint
+	default:
+		panic("unreachable")
+	}
 }
 
 func makeBigInt(off int32, mag []byte, negative bool) bigInt {
@@ -34,33 +56,48 @@ func (a *Arena) isIntSmall(data int32) bool {
 	return data > 0
 }
 
-func (a *Arena) int64(data int32) (int64, bool) {
+func (a *Arena) int64(data int32) int64 {
 	if data <= 0 {
-		return 0, false
+		panic("programming error")
 	}
-	return a.ints[data], true
+	return a.ints[data]
 }
 
-func (a *Arena) bigInt(data int32) (bigInt, []byte, bool) {
+func (a *Arena) bigInt(data int32) *big.Int {
 	if data >= 0 {
-		return bigInt{}, nil, false
+		panic("programming error")
+	}
+	v, mag := a.bigIntData(data)
+	var vbig big.Int
+	vbig.SetBytes(mag)
+	if v.negative() {
+		vbig.Neg(&vbig)
+	}
+	return &vbig
+}
+
+func (a *Arena) bigIntData(data int32) (bigInt, []byte) {
+	if data >= 0 {
+		panic("unreachable")
 	}
 	i := -data
 	v := a.bigInts[i]
 	n := v.magnitudeLen()
-	return v, a.bigIntBytes[v.off : v.off+n], true
+	return v, a.bigIntBytes[v.off : v.off+n]
 }
 
 func (a *Arena) equalBigInts(data int32, negative bool, mag []byte) bool {
-	v, old, ok := a.bigInt(data)
-	return ok && v.negative() == negative && bytes.Equal(old, mag)
+	v, vmag := a.bigIntData(data)
+	return v.negative() == negative && bytes.Equal(vmag, mag)
 }
 
 func (a *Arena) compareInts(x, y int32) int {
-	xs, xSmall := a.int64(x)
-	ys, ySmall := a.int64(y)
+	xkind := integerKind(x)
+	ykind := integerKind(y)
 	switch {
-	case xSmall && ySmall:
+	case xkind == sint && ykind == sint:
+		xs := a.int64(x)
+		ys := a.int64(y)
 		if xs < ys {
 			return -1
 		}
@@ -68,22 +105,22 @@ func (a *Arena) compareInts(x, y int32) int {
 			return 1
 		}
 		return 0
-	case xSmall:
-		yv, _, _ := a.bigInt(y)
+	case xkind == sint:
+		yv, _ := a.bigIntData(y)
 		if yv.negative() {
 			return 1
 		}
 		return -1
-	case ySmall:
-		xv, _, _ := a.bigInt(y)
+	case ykind == sint:
+		xv, _ := a.bigIntData(x)
 		if xv.negative() {
 			return -1
 		}
 		return 1
 	}
 	// both are big
-	xv, xb, _ := a.bigInt(x)
-	yv, yb, _ := a.bigInt(y)
+	xv, xmag := a.bigIntData(x)
+	yv, ymag := a.bigIntData(y)
 	if xv.negative() != yv.negative() {
 		if xv.negative() {
 			return -1
@@ -91,7 +128,7 @@ func (a *Arena) compareInts(x, y int32) int {
 		return 1
 	}
 
-	cmp := compareMagnitude(xb, yb)
+	cmp := compareMagnitude(xmag, ymag)
 	if xv.negative() {
 		return -cmp
 	}
@@ -107,4 +144,42 @@ func compareMagnitude(a, b []byte) int {
 		return 1
 	}
 	return bytes.Compare(a, b)
+}
+
+func (a *Arena) nextIntLiteral(id TypeID) TypeID {
+	return a.intLiteralAdd64(id, 1)
+}
+
+func (a *Arena) prevIntLiteral(id TypeID) TypeID {
+	return a.intLiteralAdd64(id, -1)
+}
+
+func (a *Arena) intLiteralAdd64(id TypeID, v int64) TypeID {
+	if v == 0 {
+		return id
+	}
+	n := a.Node(id)
+	if n.kind != IntLit {
+		panic(n.kind.String())
+	}
+
+	var x *big.Int
+	if integerKind(n.data) == sint {
+		val := a.int64(n.data)
+
+		if v > 0 {
+			if val <= math.MaxInt64-v {
+				return a.internInt(val + v)
+			}
+		} else {
+			if val >= math.MinInt64-v {
+				return a.internInt(val + v)
+			}
+		}
+
+		x = big.NewInt(val)
+	} else {
+		x = a.bigInt(n.data)
+	}
+	return a.internBigInt(x.Add(x, big.NewInt(v)))
 }
