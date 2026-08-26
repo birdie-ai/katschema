@@ -43,6 +43,15 @@ func TestCompileIntern(t *testing.T) {
 			},
 		},
 		{
+			name: "same big int literal",
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddInt(google, z)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddInt("+"+google, z)
+			},
+		},
+		{
 			name: "same literal float different syntax",
 			x: func(a *ast.Tree) ast.NodeID {
 				return a.AddFloat("1.01", z)

@@ -24,8 +24,10 @@ type Arena struct {
 	fields  []Field
 	sums    []range32
 
-	ints    []int64
-	numbers []float64
+	ints        []int64
+	bigInts     []bigInt
+	bigIntBytes []byte
+	floats      []float64
 
 	refinements []refinement
 
@@ -84,7 +86,8 @@ func (a *Arena) init() {
 	a.stringIndex = make(map[string]StringID)
 
 	a.ints = append(a.ints, 0)
-	a.numbers = append(a.numbers, 0)
+	a.bigInts = append(a.bigInts, bigInt{})
+	a.floats = append(a.floats, 0)
 	a.refinements = append(a.refinements, refinement{})
 
 	a.constraints = append(a.constraints, constraintData{})
@@ -198,13 +201,32 @@ func (a *Arena) internInt(v int64) TypeID {
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == IntLit && a.ints[n.data] == v
+		return n.kind == IntLit && n.data > 0 && a.ints[n.data] == v
 	}); id != 0 {
 		return id
 	}
 	i := int32(len(a.ints))
 	a.ints = append(a.ints, v)
 	return a.appendNode(Node{kind: IntLit, data: i}, fp, a.hashHead[fp])
+}
+
+func (a *Arena) internBigInt(negative bool, mag []byte) TypeID {
+	a.scratch = a.scratch[:0]
+	a.scratch = append(a.scratch, encodingVersion, byte(IntLit))
+	a.scratch = putBigInt(a.scratch, negative, mag)
+	fp := a.hash(a.scratch)
+	id := a.find(fp, func(id TypeID) bool {
+		n := a.nodes[id]
+		return n.kind == IntLit && n.data < 0 && a.equalBigInts(n.data, negative, mag)
+	})
+	if id != 0 {
+		return id
+	}
+	i := int32(len(a.bigInts))
+	off := int32(len(a.bigIntBytes))
+	a.bigIntBytes = append(a.bigIntBytes, mag...)
+	a.bigInts = append(a.bigInts, makeBigInt(off, mag, negative))
+	return a.appendNode(Node{kind: IntLit, data: -i}, fp, a.hashHead[fp])
 }
 
 func (a *Arena) internFloat(v float64) TypeID {
@@ -215,12 +237,12 @@ func (a *Arena) internFloat(v float64) TypeID {
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == FloatLit && floatEqual(a.numbers[n.data], v)
+		return n.kind == FloatLit && floatEqual(a.floats[n.data], v)
 	}); id != 0 {
 		return id
 	}
-	i := int32(len(a.numbers))
-	a.numbers = append(a.numbers, v)
+	i := int32(len(a.floats))
+	a.floats = append(a.floats, v)
 	return a.appendNode(Node{kind: FloatLit, data: i}, fp, a.hashHead[fp])
 }
 

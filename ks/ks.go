@@ -3,6 +3,7 @@ package ks
 
 import (
 	"fmt"
+	"math/big"
 	"strconv"
 
 	"github.com/birdie-ai/katschema/parser/ast"
@@ -136,6 +137,11 @@ func LitBool(v bool) Value {
 // LitInt is a literal int.
 func LitInt(i int64) Value {
 	return Value{kind: valueInt, text: strconv.FormatInt(i, 10)}
+}
+
+// LitBigInt returns a literal big integer.
+func LitBigInt(i *big.Int) Value {
+	return Value{kind: valueInt, text: i.Text(10)}
 }
 
 // LitFloat is a literal float.

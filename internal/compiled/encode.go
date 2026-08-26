@@ -32,6 +32,17 @@ func putstr(p []byte, s string) []byte {
 	return append(p, s...)
 }
 
+func putBigInt(p []byte, negative bool, mag []byte) []byte {
+	p = append(p, 0xff)
+	if negative {
+		p = append(p, 1)
+	} else {
+		p = append(p, 0)
+	}
+	p = put32(p, int32(len(mag)))
+	return append(p, mag...)
+}
+
 // this function is weird but it canonicalize as +0 in the case of -0.
 // TODO(i4k): should we normalize NaNs?
 func canonicalFloat(v float64) float64 {
