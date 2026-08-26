@@ -63,6 +63,11 @@ func (a *Arena) int64(data int32) int64 {
 	return a.ints[data]
 }
 
+// bigInt returns a big.Int representation of the stored bigInt.
+// NOTE(i4k): it's very important that this *big.Int pointer is a fresh allocation
+// because big.Int manipulation methods (like Add(), Sub(), etc) internally mutate
+// the pointer and we don't want that our constraint bounds check logic manipulate
+// the real TypeID node.
 func (a *Arena) bigInt(data int32) *big.Int {
 	if data >= 0 {
 		panic("programming error")
