@@ -54,10 +54,10 @@ func TestCompileIntern(t *testing.T) {
 		{
 			name: "same literal float different syntax",
 			x: func(a *ast.Tree) ast.NodeID {
-				return a.AddFloat("1.01", z)
+				return a.AddDecimal("1.01", z)
 			},
 			y: func(a *ast.Tree) ast.NodeID {
-				return a.AddFloat("1.01e0", z)
+				return a.AddDecimal("1.01e0", z)
 			},
 		},
 		{

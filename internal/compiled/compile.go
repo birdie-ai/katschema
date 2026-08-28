@@ -65,8 +65,8 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 	case ast.Int:
 		t, err := c.intLiteral(id, c.t.Int(id))
 		return t, false, err
-	case ast.Float:
-		t, err := c.floatLiteral(id, c.t.Float(id))
+	case ast.Decimal:
+		t, err := c.floatLiteral(id, c.t.Decimal(id))
 		return t, false, err
 	case ast.String:
 		return c.a.internStringLit(c.t.String(id)), false, nil
