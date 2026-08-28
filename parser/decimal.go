@@ -109,7 +109,6 @@ func Decimal(raw []byte, buf []byte) (DecimalParts, error) {
 		buf = buf[:1]
 		buf[0] = '0'
 	} else if start != 0 {
-		// TODO(i4k): ensure this is sound.
 		copy(buf, buf[start:])
 		buf = buf[:len(buf)-start]
 	}

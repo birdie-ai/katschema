@@ -53,19 +53,19 @@ func TestParseDecimal(t *testing.T) {
 		{
 			name: "malformed exponent",
 			text: "1e",
-			err:  parser.ErrParseDecimal,
+			err:  parser.ErrParseDecimalExpMissing,
 		},
 		{
 			text: "1e+",
-			err:  parser.ErrParseDecimal,
+			err:  parser.ErrParseDecimalExpMissing,
 		},
 		{
 			text: "1e-",
-			err:  parser.ErrParseDecimal,
+			err:  parser.ErrParseDecimalExpMissing,
 		},
 		{
 			text: "1.0e",
-			err:  parser.ErrParseDecimal,
+			err:  parser.ErrParseDecimalExpMissing,
 		},
 		{
 			text: "1x",
@@ -85,17 +85,30 @@ func TestParseDecimal(t *testing.T) {
 			err:  parser.ErrParseDecimalExpOverflow,
 		},
 		{
+			name: "exponent + adjust overflows",
+			text: "0.1e9223372036854775809",
+			err:  parser.ErrParseDecimalExpOverflow,
+		},
+		{
 			text: "1e-9223372036854775809",
-			err:  parser.ErrParseDecimal,
+			err:  parser.ErrParseDecimalExpOverflow,
 		},
 		{
 			name: "canonical exponent is not representable in int64",
 			text: "10e9223372036854775807",
-			err:  parser.ErrParseDecimal,
+			err:  parser.ErrParseDecimalExpOverflow,
 		},
 		{
 			text: "1.01e-9223372036854775808",
-			err:  parser.ErrParseDecimal,
+			err:  parser.ErrParseDecimalExpOverflow,
+		},
+		{
+			text: "1e-9223372036854775809",
+			err:  parser.ErrParseDecimalExpOverflow,
+		},
+		{
+			text: "0.1e-9223372036854775809",
+			err:  parser.ErrParseDecimalExpOverflow,
 		},
 		{
 			text: "0",
@@ -269,6 +282,41 @@ func TestParseDecimal(t *testing.T) {
 			want: parser.DecimalParts{
 				Digits: []byte("1"),
 				Exp:    math.MinInt64,
+			},
+		},
+		{
+			text: "1e9223372036854775807",
+			want: parser.DecimalParts{
+				Digits: []byte("1"),
+				Exp:    9223372036854775807,
+			},
+		},
+		{
+			text: "0.1e9223372036854775808",
+			want: parser.DecimalParts{
+				Digits: []byte("1"),
+				Exp:    9223372036854775807,
+			},
+		},
+		{
+			text: "0.01e9223372036854775808",
+			want: parser.DecimalParts{
+				Digits: []byte("1"),
+				Exp:    9223372036854775806,
+			},
+		},
+		{
+			text: "0.010e9223372036854775808",
+			want: parser.DecimalParts{
+				Digits: []byte("1"),
+				Exp:    9223372036854775806,
+			},
+		},
+		{
+			text: "0.0101e9223372036854775808",
+			want: parser.DecimalParts{
+				Digits: []byte("101"),
+				Exp:    9223372036854775804,
 			},
 		},
 	} {
