@@ -41,6 +41,10 @@ func TestParseDecimal(t *testing.T) {
 			err:  parser.ErrParseDecimal,
 		},
 		{
+			text: "1..1",
+			err:  parser.ErrParseDecimal,
+		},
+		{
 			name: "leading zero in significand is malformed",
 			text: "01",
 			err:  parser.ErrParseDecimal,
