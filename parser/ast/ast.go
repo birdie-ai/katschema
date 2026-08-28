@@ -89,6 +89,13 @@ type (
 		NameSpan token.Span
 	}
 
+	// Decimal is not an AST node but parsed separately when needed.
+	Decimal struct {
+		Exp    int64
+		Digits []byte // guaranteed to contain only 0-9 digits.
+		Neg    bool
+	}
+
 	sliceRefs struct {
 		off uint32
 		len uint32
