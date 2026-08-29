@@ -17,6 +17,8 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Testing
         run: go test ./... -timeout 60s -race -shuffle on
