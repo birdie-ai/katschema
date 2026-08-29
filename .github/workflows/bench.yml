@@ -22,14 +22,14 @@ jobs:
       RESULT_DIR: benchmark-result
 
     steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v7
+
       - name: Initialize benchmark report
         run: |
           mkdir -p "$RESULT_DIR"
           printf '%s\n' error > "$RESULT_DIR/status.txt"
           printf '%s\n' 'Benchmark setup did not complete.' > "$RESULT_DIR/output.txt"
-
-      - name: Checkout pull request
-        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v7
