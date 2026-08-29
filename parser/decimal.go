@@ -42,7 +42,7 @@ func Decimal(raw []byte, buf []byte) (DecimalParts, error) {
 		return DecimalParts{}, fmt.Errorf("%w: missing digits", ErrParseDecimal)
 	}
 
-	buf = buf[:0]
+	buf = make([]byte, 0, 8192)
 	pos := 0
 	neg := false
 	switch raw[0] {
