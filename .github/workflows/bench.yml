@@ -1,0 +1,103 @@
+name: benchmarks
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: benchmarks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Compare with main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BENCHCHECK_VERSION: 181342ba4d89886721aadbfae5771647b517fc26
+      RESULT_DIR: benchmark-result
+
+    steps:
+      - name: Initialize benchmark report
+        run: |
+          mkdir -p "$RESULT_DIR"
+          printf '%s\n' error > "$RESULT_DIR/status.txt"
+          printf '%s\n' 'Benchmark setup did not complete.' > "$RESULT_DIR/output.txt"
+
+      - name: Checkout pull request
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install benchcheck
+        id: install
+        continue-on-error: true
+        env:
+          GOBIN: ${{ runner.temp }}/bin
+        run: |
+          set -o pipefail
+          mkdir -p "$GOBIN"
+          go install "codeberg.org/madlambda/benchcheck/cmd/benchcheck@${BENCHCHECK_VERSION}" \
+            2>&1 | tee "$RESULT_DIR/output.txt"
+
+      - name: Compare PR benchmarks with main
+        if: steps.install.outcome == 'success'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GOBIN: ${{ runner.temp }}/bin
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -o pipefail
+          set +e
+
+          "$GOBIN/benchcheck" \
+            -mod "github.com/${GITHUB_REPOSITORY}" \
+            -old "$BASE_SHA" \
+            -new "$HEAD_SHA" \
+            -check 'time/op=+10%' \
+            2>&1 | tee "$RESULT_DIR/output.txt"
+          benchcheck_exit=${PIPESTATUS[0]}
+
+          set -e
+          if (( benchcheck_exit != 0 )) || grep -q 'failed to run:' "$RESULT_DIR/output.txt"; then
+            printf '%s\n' error > "$RESULT_DIR/status.txt"
+          elif grep -q 'check failed:' "$RESULT_DIR/output.txt"; then
+            printf '%s\n' regression > "$RESULT_DIR/status.txt"
+          else
+            printf '%s\n' success > "$RESULT_DIR/status.txt"
+          fi
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-result
+          path: benchmark-result/
+          retention-days: 7
+
+      - name: Enforce benchmark result
+        if: always()
+        run: |
+          status=$(head -n 1 "$RESULT_DIR/status.txt")
+          case "$status" in
+            success)
+              echo 'Benchmarks are within the 10% regression threshold.'
+              ;;
+            regression)
+              echo 'A benchmark regressed by more than 10%.' >&2
+              exit 1
+              ;;
+            *)
+              echo 'Benchcheck could not produce a valid comparison.' >&2
+              exit 1
+              ;;
+          esac
