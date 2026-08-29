@@ -48,10 +48,10 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		}
 		return a.equalBigInts(n.data, v.Sign() < 0, v.Bytes())
 	case FloatLit:
-		if t.Node(value).Kind() != ast.Float {
+		if t.Node(value).Kind() != ast.Decimal {
 			return false
 		}
-		v, err := strconv.ParseFloat(t.Float(value), 64)
+		v, err := strconv.ParseFloat(t.Decimal(value), 64)
 		return err == nil && floatEqual(v, a.floats[n.data])
 	case StringLit:
 		return t.Node(value).Kind() == ast.String && t.String(value) == a.StringValue(StringID(n.data))
@@ -247,8 +247,8 @@ func astFloat64(t *ast.Tree, id ast.NodeID) (float64, bool) {
 			return 0, false
 		}
 		return float64(i), true
-	case ast.Float:
-		v, err := strconv.ParseFloat(t.Float(id), 64)
+	case ast.Decimal:
+		v, err := strconv.ParseFloat(t.Decimal(id), 64)
 		return canonicalFloat(v), err == nil
 	default:
 		return 0, false

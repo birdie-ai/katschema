@@ -47,12 +47,12 @@ func TestPrint(t *testing.T) {
 		},
 		{
 			name: "negative float",
-			root: func(a *Tree) NodeID { return a.AddFloat("-13.37", z) },
+			root: func(a *Tree) NodeID { return a.AddDecimal("-13.37", z) },
 			want: `-13.37`,
 		},
 		{
 			name: "positive float",
-			root: func(a *Tree) NodeID { return a.AddFloat("13.37", z) },
+			root: func(a *Tree) NodeID { return a.AddDecimal("13.37", z) },
 			want: `13.37`,
 		},
 		{
@@ -92,7 +92,7 @@ func TestPrint(t *testing.T) {
 					},
 					{
 						Name:  a.AddText("float"),
-						Value: a.AddFloat("-3.141519", z),
+						Value: a.AddDecimal("-3.141519", z),
 					},
 					{
 						Name:  a.AddText("list"),
@@ -144,7 +144,7 @@ func TestPrint(t *testing.T) {
 		{
 			name: "literal float schema",
 			root: func(a *Tree) NodeID {
-				return a.AddSchema(a.AddFloat("3.14", z), nil, z)
+				return a.AddSchema(a.AddDecimal("3.14", z), nil, z)
 			},
 			want: `(3.14)`,
 		},
@@ -260,8 +260,8 @@ func TestPrint(t *testing.T) {
 			name: "binary constraint with arith",
 			root: func(a *Tree) NodeID {
 				x := a.AddIdent("x", z)
-				one := a.AddFloat("1", z)
-				two := a.AddFloat("2", z)
+				one := a.AddDecimal("1", z)
+				two := a.AddDecimal("2", z)
 
 				add := a.AddBinary(x, token.Add, one, z)
 				group := a.AddGroup(z, add)
@@ -393,7 +393,7 @@ func benchValue() (NodeID, *Tree) {
 		},
 		{
 			Name:  a.AddText("float"),
-			Value: a.AddFloat("-3.141519", z),
+			Value: a.AddDecimal("-3.141519", z),
 		},
 		{
 			Name:  a.AddText("list"),

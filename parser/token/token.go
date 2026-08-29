@@ -45,7 +45,8 @@ const (
 	EOF
 
 	Ident
-	Number
+	Int
+	Decimal
 	String
 
 	Null
@@ -91,8 +92,10 @@ func (k Kind) String() string {
 		return "EOF"
 	case Ident:
 		return "identifier"
-	case Number:
-		return "number"
+	case Int:
+		return "integer"
+	case Decimal:
+		return "decimal"
 	case String:
 		return "string"
 	case Null:

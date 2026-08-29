@@ -354,7 +354,7 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 	case valueInt:
 		return t.AddInt(v.text, z), nil
 	case valueFloat:
-		return t.AddFloat(v.text, z), nil
+		return t.AddDecimal(v.text, z), nil
 	case valueString:
 		return t.AddString(v.text, z), nil
 	case valueArray:

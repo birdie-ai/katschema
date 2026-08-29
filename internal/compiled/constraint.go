@@ -362,7 +362,7 @@ func (n *normalizer) inSet(left, right ast.NodeID) error {
 func (n *normalizer) literal(id ast.NodeID) (TypeID, error) {
 	id = n.ungroup(id)
 	switch n.c.t.Node(id).Kind() {
-	case ast.Null, ast.Bool, ast.Int, ast.Float, ast.String:
+	case ast.Null, ast.Bool, ast.Int, ast.Decimal, ast.String:
 		t, optional, err := n.c.value(id, false)
 		if optional {
 			return 0, n.c.errorf(id, "optional literal is invalid in a constraint")
@@ -403,10 +403,10 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 		n.applyInt(op, v)
 		return nil
 	case Float:
-		if litKind != ast.Float {
+		if litKind != ast.Decimal {
 			return n.c.errorf(literal, "float constraint requires an float bound")
 		}
-		raw := n.c.t.Float(literal)
+		raw := n.c.t.Decimal(literal)
 		v, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
 			return n.c.errorf(literal, "invalid numeric bound %q", raw)

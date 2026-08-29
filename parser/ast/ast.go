@@ -112,7 +112,7 @@ const (
 	Null
 	Bool
 	Int
-	Float
+	Decimal
 	String
 	List
 	Object
@@ -251,8 +251,8 @@ func (t *Tree) AddInt(raw string, span token.Span) NodeID {
 	return t.addNode(Int, span, uint32(t.AddText(raw)))
 }
 
-func (t *Tree) AddFloat(raw string, span token.Span) NodeID {
-	return t.addNode(Float, span, uint32(t.AddText(raw)))
+func (t *Tree) AddDecimal(raw string, span token.Span) NodeID {
+	return t.addNode(Decimal, span, uint32(t.AddText(raw)))
 }
 
 func (t *Tree) Int(id NodeID) string {
@@ -263,9 +263,9 @@ func (t *Tree) Int(id NodeID) string {
 	return t.Text(TextID(n.data))
 }
 
-func (t *Tree) Float(id NodeID) string {
+func (t *Tree) Decimal(id NodeID) string {
 	n := t.Node(id)
-	if n.kind != Float {
+	if n.kind != Decimal {
 		return ""
 	}
 	return t.Text(TextID(n.data))
@@ -494,8 +494,8 @@ func (k Kind) String() string {
 		return "Bool"
 	case Int:
 		return "Integer"
-	case Float:
-		return "Float"
+	case Decimal:
+		return "Decimal"
 	case String:
 		return "String"
 	case List:
@@ -530,7 +530,7 @@ func (k Kind) String() string {
 
 func (k Kind) IsValue() bool {
 	switch k {
-	case Null, Bool, Int, Float, String, List, Object, Schema:
+	case Null, Bool, Int, Decimal, String, List, Object, Schema:
 		return true
 	}
 	return false
@@ -550,7 +550,7 @@ func (k Kind) IsClause() bool {
 
 func (k Kind) IsExpr() bool {
 	switch k {
-	case Null, Bool, Int, Float, String, List, Object,
+	case Null, Bool, Int, Decimal, String, List, Object,
 		Ident, Path, Call, Unary, Binary, Group:
 		return true
 	}

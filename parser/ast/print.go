@@ -41,8 +41,8 @@ func (p *printer) node(id NodeID) {
 	case Int:
 		p.write(p.t.Int(id))
 
-	case Float:
-		p.write(p.t.Float(id))
+	case Decimal:
+		p.write(p.t.Decimal(id))
 
 	case String:
 		p.string(p.t.String(id))
