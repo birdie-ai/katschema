@@ -115,6 +115,10 @@ func TestParseDecimal(t *testing.T) {
 			err:  parser.ErrParseDecimalExpOverflow,
 		},
 		{
+			text: "+0",
+			err:  parser.ErrParseDecimal,
+		},
+		{
 			text: "0",
 			want: parser.DecimalParts{Digits: []byte("0")},
 		},
@@ -122,10 +126,7 @@ func TestParseDecimal(t *testing.T) {
 			text: "-0",
 			want: parser.DecimalParts{Digits: []byte("0")},
 		},
-		{
-			text: "+0",
-			want: parser.DecimalParts{Digits: []byte("0")},
-		},
+
 		{
 			text: "0.0",
 			want: parser.DecimalParts{Digits: []byte("0")},
@@ -151,11 +152,6 @@ func TestParseDecimal(t *testing.T) {
 			text: "-1",
 			want: parser.DecimalParts{Neg: true, Digits: []byte("1")},
 		},
-		{
-			text: "+1",
-			want: parser.DecimalParts{Digits: []byte("1")},
-		},
-
 		{
 			text: "1.0",
 			want: parser.DecimalParts{Digits: []byte("1")},

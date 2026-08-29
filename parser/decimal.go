@@ -45,16 +45,13 @@ func Decimal(raw []byte, buf []byte) (DecimalParts, error) {
 	buf = buf[:0]
 	pos := 0
 	neg := false
-	switch raw[0] {
-	case '-':
+	if raw[0] == '-' {
 		neg = true
-		fallthrough
-	case '+':
 		pos++
-	}
 
-	if pos == len(raw) {
-		return DecimalParts{}, fmt.Errorf("%w: missing digits", ErrParseDecimal)
+		if pos == len(raw) {
+			return DecimalParts{}, fmt.Errorf("%w: missing digits", ErrParseDecimal)
+		}
 	}
 
 	if !isDigit(raw[pos]) {
