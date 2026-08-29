@@ -64,6 +64,8 @@ jobs:
             -old "$BASE_SHA" \
             -new "$HEAD_SHA" \
             -check 'time/op=+10%' \
+            -check 'alloc/op=+5%' \
+            -check 'speed=-5%' \
             2>&1 | tee "$RESULT_DIR/output.txt"
           benchcheck_exit=${PIPESTATUS[0]}
 
