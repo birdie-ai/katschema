@@ -193,6 +193,28 @@ func TestSubtype(t *testing.T) {
 			),
 			want: true,
 		},
+		{
+			name: "(real) subtyping honor constraint",
+			a: ks.Where(ks.Real(), ks.Binary(ks.X(), ks.Gt, ks.RealExpr("1.0"))),
+			b: ks.Where(ks.Real(), ks.Binary(ks.X(), ks.Ge, ks.RealExpr("1"))),
+			want: true,
+		},
+		{
+			name: "(real) subtyping honor constraint - reverse",
+			b: ks.Where(ks.Real(), ks.Binary(ks.X(), ks.Gt, ks.RealExpr("1.0"))),
+			a: ks.Where(ks.Real(), ks.Binary(ks.X(), ks.Ge, ks.RealExpr("1"))),
+		},
+		{
+			name: "check (int) is a subtype of (real)",
+			a: ks.Int(),
+			b: ks.Real(),
+			want: true,
+		},
+		{
+			name: "check (real) is not a subtype of (int)",
+			b: ks.Int(),
+			a: ks.Real(),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			arena := NewArena()

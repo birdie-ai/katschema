@@ -62,6 +62,26 @@ func (a *Arena) putIntLiteral(p []byte, id TypeID) []byte {
 	return putBigInt(p, v.negative(), mag)
 }
 
+func (a *Arena) putRealLiteral(p []byte, id TypeID) []byte {
+	if id == 0 {
+		return append(p, 0)
+	}
+	n := a.Node(id)
+	if n.kind != RealLit {
+		panic(n.kind)
+	}
+	v, digits := a.realData(n.data)
+	p = append(p, 1)
+	if v.negative() {
+		p = append(p, 1)
+	} else {
+		p = append(p, 0)
+	}
+	p = put64(p, v.exp)
+	p = put32(p, int32(len(digits)))
+	return append(p, digits...)
+}
+
 // this function is weird but it canonicalize as +0 in the case of -0.
 // TODO(i4k): should we normalize NaNs?
 func canonicalFloat(v float64) float64 {

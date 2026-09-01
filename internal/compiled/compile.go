@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strconv"
 
+	"github.com/birdie-ai/katschema/parser"
 	"github.com/birdie-ai/katschema/parser/ast"
 	"github.com/birdie-ai/katschema/parser/token"
 )
@@ -66,7 +67,7 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 		t, err := c.intLiteral(id, c.t.Int(id))
 		return t, false, err
 	case ast.Decimal:
-		t, err := c.floatLiteral(id, c.t.Decimal(id))
+		t, err := c.realLiteral(id, c.t.Decimal(id))
 		return t, false, err
 	case ast.String:
 		return c.a.internStringLit(c.t.String(id)), false, nil
@@ -98,12 +99,13 @@ func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
 	return c.a.internRawBigInt(v.Sign() < 0, v.Bytes()), nil
 }
 
-func (c *compiler) floatLiteral(id ast.NodeID, raw string) (TypeID, error) {
-	v, err := strconv.ParseFloat(raw, 64)
+func (c *compiler) realLiteral(id ast.NodeID, raw string) (TypeID, error) {
+	input := []byte(raw)
+	parts, err := parser.Decimal(input, input[:0])
 	if err != nil {
 		return 0, c.errorf(id, "invalid number literal %q", raw)
 	}
-	return c.a.internFloat(v), nil
+	return c.a.internRawReal(parts.Neg, parts.Digits, parts.Exp), nil
 }
 
 func (c *compiler) list(id ast.NodeID) (TypeID, error) {
@@ -219,8 +221,12 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	initial := normConstraint{}
 	if n := c.a.Node(base); n.kind == Refined {
 		r := c.a.refinements[n.data]
-		if c.a.Node(r.base).kind == Int {
+		switch c.a.Node(r.base).kind {
+		case Int:
 			initial = c.a.intConstraintNorm(r.constraint)
+			base = r.base
+		case Real:
+			initial = c.a.realConstraintNorm(r.constraint)
 			base = r.base
 		}
 	}
@@ -260,6 +266,8 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 			return c.a.Bool(), nil
 		case "int":
 			return c.a.Int(), nil
+		case "real":
+			return c.a.Real(), nil
 		case "float":
 			return c.a.Float(), nil
 		case "string":

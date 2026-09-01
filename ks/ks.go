@@ -90,6 +90,7 @@ func Uint16() Value { return Type("uint16") }
 func Uint32() Value { return Type("uint32") }
 func Uint64() Value { return Type("uint64") }
 func Float() Value  { return Type("float") }
+func Real() Value   { return Type("real") }
 func String() Value { return Type("string") }
 
 func X() Expr { return Ident("x") }
@@ -156,6 +157,17 @@ func LitBigInt(i *big.Int) Value {
 // LitFloat is a literal float.
 func LitFloat(f float64) Value {
 	return Value{kind: valueFloat, text: strconv.FormatFloat(f, 'f', -1, 64)}
+}
+
+// LitReal returns an exact decimal value. The raw value is parsed and
+// canonicalized when the value is compiled.
+func LitReal(raw string) Value {
+	return Value{kind: valueFloat, text: raw}
+}
+
+// LitDecimal is kept as a descriptive alias for LitReal.
+func LitDecimal(raw string) Value {
+	return LitReal(raw)
 }
 
 func LitString(v string) Value {
@@ -255,6 +267,11 @@ func IntExpr(v int64) Expr {
 // FloatExpr returns an float value as an expression.
 func FloatExpr(v float64) Expr {
 	return ValueExpr(LitFloat(v))
+}
+
+// RealExpr returns an exact decimal value as an expression.
+func RealExpr(raw string) Expr {
+	return ValueExpr(LitReal(raw))
 }
 
 // ListExpr returns a list as an expression.

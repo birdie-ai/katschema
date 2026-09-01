@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"unicode/utf8"
 
+	"github.com/birdie-ai/katschema/parser"
 	"github.com/birdie-ai/katschema/parser/ast"
 )
 
@@ -28,6 +29,8 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		return t.Node(value).Kind() == ast.Bool
 	case Int:
 		return astInt(t, value)
+	case Real:
+		return astReal(t, value)
 	case Float:
 		return asFloat(t, value)
 	case String:
@@ -53,6 +56,13 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		}
 		v, err := strconv.ParseFloat(t.Decimal(value), 64)
 		return err == nil && floatEqual(v, a.floats[n.data])
+	case RealLit:
+		got, ok := astRealNumber(t, value)
+		if !ok {
+			return false
+		}
+		want, ok := a.realNumber(typ)
+		return ok && compareDecimalNumbers(got, want) == 0
 	case StringLit:
 		return t.Node(value).Kind() == ast.String && t.String(value) == a.StringValue(StringID(n.data))
 	case List:
@@ -161,6 +171,12 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 			return false
 		}
 	}
+	if d.flags&constraintReal != 0 {
+		v, ok := astRealNumber(t, value)
+		if !ok || !a.checkRealNumberBounds(v, d.realFlags, d.realMin, d.realMax) {
+			return false
+		}
+	}
 	if d.flags&constraintFloat != 0 {
 		v, ok := astFloat64(t, value)
 		if !ok || !checkFloatBounds(v, d.floatFlags, d.numMin, d.numMax) {
@@ -206,6 +222,60 @@ func astInt(t *ast.Tree, id ast.NodeID) bool {
 	var v big.Int
 	_, ok := v.SetString(raw, 10)
 	return ok
+}
+
+func astReal(t *ast.Tree, id ast.NodeID) bool {
+	_, ok := astRealNumber(t, id)
+	return ok
+}
+
+func astRealNumber(t *ast.Tree, id ast.NodeID) (decimalNumber, bool) {
+	switch t.Node(id).Kind() {
+	case ast.Int:
+		raw := t.Int(id)
+		var v big.Int
+		if _, ok := v.SetString(raw, 10); !ok {
+			return decimalNumber{}, false
+		}
+		text := v.String()
+		negative := len(text) > 0 && text[0] == '-'
+		if negative {
+			text = text[1:]
+		}
+		return decimalNumber{negative: negative, digits: []byte(text)}, true
+	case ast.Decimal:
+		parts, err := parser.Decimal([]byte(t.Decimal(id)), nil)
+		if err != nil {
+			return decimalNumber{}, false
+		}
+		return decimalNumber{negative: parts.Neg, digits: parts.Digits, exp: parts.Exp}, true
+	default:
+		return decimalNumber{}, false
+	}
+}
+
+func (a *Arena) checkRealNumberBounds(v decimalNumber, flags boundFlags, minID, maxID TypeID) bool {
+	if flags&hasMin != 0 {
+		min, ok := a.realNumber(minID)
+		if !ok {
+			return false
+		}
+		cmp := compareDecimalNumbers(v, min)
+		if cmp < 0 || cmp == 0 && flags&minInclusive == 0 {
+			return false
+		}
+	}
+	if flags&hasMax != 0 {
+		max, ok := a.realNumber(maxID)
+		if !ok {
+			return false
+		}
+		cmp := compareDecimalNumbers(v, max)
+		if cmp > 0 || cmp == 0 && flags&maxInclusive == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func astInt64(t *ast.Tree, id ast.NodeID) (int64, bool) {
