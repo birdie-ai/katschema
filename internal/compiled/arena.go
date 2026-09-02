@@ -364,7 +364,7 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 	//
 	// special cases:
 	//   6.  true | false		=> (bool)
-	//   7.  (A, C1) | (A, C2)	=> (A, C1 || C2)
+	//   7.  (A, C1) | (A, C2)	=> (A, union(C1 || C2)) iff union is representable.
 	//
 	// TODO(i4k): implement 7.
 
@@ -540,6 +540,8 @@ func (a *Arena) sum(id TypeID) []TypeID {
 	r := a.sums[n.data]
 	return a.refs[r.off : r.off+r.len]
 }
+
+func (a *Arena) validTypeID(id TypeID) bool { return id > 0 && int(id) < len(a.nodes) }
 
 func equalTypeIDs(a, b []TypeID) bool {
 	if len(a) != len(b) {
