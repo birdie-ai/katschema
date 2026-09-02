@@ -525,9 +525,10 @@ An email can be validated and normalized using `email(x)`:
 The following primitive types are builtin:
 
 * `string`: UTF-8 string.
+* `real`: mathematical real number with exact decimal literals and dense bounds.
 * `float`: 64-bit floating point.
 * `bool`: `true` or `false`.
-* `int`: alias for `int64`.
+* `int`: mathematical integer.
 * `uint`: alias for `uint64`.
 * `int8`, `int16`, `int32`, `int64`: signed integers.
 * `uint8`, `uint16`, `uint32`, `uint64`: unsigned integers.

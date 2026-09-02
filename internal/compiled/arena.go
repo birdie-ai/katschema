@@ -29,6 +29,8 @@ type Arena struct {
 	bigInts     []bigInt
 	bigIntBytes []byte
 	floats      []float64
+	reals       []realValue
+	realBytes   []byte
 
 	refinements []refinement
 
@@ -57,6 +59,7 @@ type Arena struct {
 	boolID   TypeID
 	intID    TypeID
 	floatID  TypeID
+	realID   TypeID
 	stringID TypeID
 }
 
@@ -89,6 +92,7 @@ func (a *Arena) init() {
 	a.ints = append(a.ints, 0)
 	a.bigInts = append(a.bigInts, bigInt{})
 	a.floats = append(a.floats, 0)
+	a.reals = append(a.reals, realValue{})
 	a.refinements = append(a.refinements, refinement{})
 
 	a.constraints = append(a.constraints, constraintData{})
@@ -102,6 +106,7 @@ func (a *Arena) init() {
 	a.boolID = a.internSimple(Bool)
 	a.intID = a.internSimple(Int)
 	a.floatID = a.internSimple(Float)
+	a.realID = a.internSimple(Real)
 	a.stringID = a.internSimple(String)
 }
 
@@ -111,6 +116,7 @@ func (a *Arena) Null() TypeID   { a.init(); return a.nullID }
 func (a *Arena) Bool() TypeID   { a.init(); return a.boolID }
 func (a *Arena) Int() TypeID    { a.init(); return a.intID }
 func (a *Arena) Float() TypeID  { a.init(); return a.floatID }
+func (a *Arena) Real() TypeID   { a.init(); return a.realID }
 func (a *Arena) String() TypeID { a.init(); return a.stringID }
 
 func (a *Arena) Len() int { a.init(); return len(a.nodes) - 1 }

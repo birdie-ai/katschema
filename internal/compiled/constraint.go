@@ -16,6 +16,12 @@ type intBounds struct {
 	max   TypeID
 }
 
+type realBounds struct {
+	flags boundFlags
+	min   TypeID
+	max   TypeID
+}
+
 type lenBounds struct {
 	flags boundFlags
 	min   int64
@@ -30,6 +36,7 @@ type floatBounds struct {
 
 type normConstraint struct {
 	ints   intBounds
+	reals  realBounds
 	floats floatBounds
 	length lenBounds
 	enum   []TypeID // nil means no enum restriction; empty non-nil means impossible.
@@ -64,6 +71,10 @@ type constraintData struct {
 	intMin   TypeID
 	intMax   TypeID
 
+	realFlags boundFlags
+	realMin   TypeID
+	realMax   TypeID
+
 	floatFlags boundFlags
 	numMin     float64
 	numMax     float64
@@ -80,6 +91,7 @@ const (
 	constraintFloat
 	constraintLen
 	constraintEnum
+	constraintReal
 )
 
 func (c *compiler) normalizeConstraints(base TypeID, clauses []ast.NodeID) (ct ConstraintID, impossible bool, err error) {
@@ -367,7 +379,17 @@ func (n *normalizer) literal(id ast.NodeID) (TypeID, error) {
 		if optional {
 			return 0, n.c.errorf(id, "optional literal is invalid in a constraint")
 		}
-		return t, err
+		if err != nil {
+			return 0, err
+		}
+		if n.c.a.baseKind(n.base) == Float {
+			floatLit, ok := n.c.a.floatLiteral(t)
+			if !ok {
+				return 0, n.c.errorf(id, "literal cannot be represented as a float")
+			}
+			t = floatLit
+		}
+		return t, nil
 	default:
 		return 0, n.c.errorf(id, "constraint requires a scalar literal")
 	}
@@ -412,6 +434,26 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 			return n.c.errorf(literal, "invalid numeric bound %q", raw)
 		}
 		n.applyFloat(op, canonicalFloat(v))
+		return nil
+	case Real:
+		var v TypeID
+		switch litKind {
+		case ast.Int:
+			intLit, err := n.c.intLiteral(literal, n.c.t.Int(literal))
+			if err != nil {
+				return err
+			}
+			v = n.c.a.realFromIntLiteral(intLit)
+		case ast.Decimal:
+			var err error
+			v, err = n.c.realLiteral(literal, n.c.t.Decimal(literal))
+			if err != nil {
+				return err
+			}
+		default:
+			return n.c.errorf(literal, "real constraint requires a numeric bound")
+		}
+		n.applyReal(op, v)
 		return nil
 	default:
 		return n.c.errorf(literal, "numeric comparison is invalid for %s", kind)
@@ -463,6 +505,44 @@ func (n *normalizer) applyInt(op token.Kind, v TypeID) {
 		if r.flags&hasMax == 0 || n.c.a.compareLiteral(v, r.max) < 0 {
 			r.max = v
 			r.flags |= hasMax
+		}
+	}
+}
+
+func (n *normalizer) applyReal(op token.Kind, v TypeID) {
+	r := &n.n.reals
+	switch op {
+	default:
+		panic(op)
+	case token.Gt, token.Ge:
+		inclusive := op == token.Ge
+		cmp := 1
+		if r.flags&hasMin != 0 {
+			cmp = n.c.a.compareLiteral(v, r.min)
+		}
+		if r.flags&hasMin == 0 || cmp > 0 || cmp == 0 && !inclusive && r.flags&minInclusive != 0 {
+			r.min = v
+			r.flags |= hasMin
+			if inclusive {
+				r.flags |= minInclusive
+			} else {
+				r.flags &^= minInclusive
+			}
+		}
+	case token.Lt, token.Le:
+		inclusive := op == token.Le
+		cmp := -1
+		if r.flags&hasMax != 0 {
+			cmp = n.c.a.compareLiteral(v, r.max)
+		}
+		if r.flags&hasMax == 0 || cmp < 0 || cmp == 0 && !inclusive && r.flags&maxInclusive != 0 {
+			r.max = v
+			r.flags |= hasMax
+			if inclusive {
+				r.flags |= maxInclusive
+			} else {
+				r.flags &^= maxInclusive
+			}
 		}
 	}
 }
@@ -536,6 +616,13 @@ func (n *normalizer) applyLen(op token.Kind, v int64) {
 }
 
 func (n *normalizer) addEnum(v []TypeID) {
+	if n.c.a.baseKind(n.base) == Real {
+		for i, id := range v {
+			if n.c.a.Node(id).kind == IntLit {
+				v[i] = n.c.a.realFromIntLiteral(id)
+			}
+		}
+	}
 	v = n.c.a.sortUniqueTypes(v)
 	if n.n.enum == nil {
 		n.n.enum = v
@@ -564,7 +651,7 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 	if n.impossible {
 		return 0, true, nil
 	}
-	if n.c.a.impossibleIntBounds(n.n.ints) || impossibleFloatBounds(n.n.floats) || impossibleLenBounds(n.n.length) {
+	if n.c.a.impossibleIntBounds(n.n.ints) || n.c.a.impossibleRealBounds(n.n.reals) || impossibleFloatBounds(n.n.floats) || impossibleLenBounds(n.n.length) {
 		return 0, true, nil
 	}
 
@@ -575,6 +662,11 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 			if n.c.a.singleInt(n.n.ints) {
 				n.n.enum = []TypeID{n.n.ints.min}
 				n.n.ints = intBounds{}
+			}
+		case Real:
+			if n.c.a.singleReal(n.n.reals) {
+				n.n.enum = []TypeID{n.n.reals.min}
+				n.n.reals = realBounds{}
 			}
 		case Float:
 			// TODO(i4k): binary equality of floats for now...
@@ -599,11 +691,12 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 		// NOTE(i4k): Once schema has enums the other restrictions are redundant.
 		// We can check for clauses conflicting with the enums later and fail in such cases.
 		n.n.ints = intBounds{}
+		n.n.reals = realBounds{}
 		n.n.floats = floatBounds{}
 		n.n.length = lenBounds{}
 	}
 
-	if n.n.ints.flags == 0 && n.n.floats.flags == 0 && n.n.length.flags == 0 && n.n.enum == nil {
+	if n.n.ints.flags == 0 && n.n.reals.flags == 0 && n.n.floats.flags == 0 && n.n.length.flags == 0 && n.n.enum == nil {
 		return 0, false, nil
 	}
 	return n.c.a.internConstraint(n.n), false, nil
@@ -614,6 +707,17 @@ func (a *Arena) impossibleIntBounds(r intBounds) bool {
 		return false
 	}
 	return a.compareLiteral(r.min, r.max) > 0
+}
+
+func (a *Arena) impossibleRealBounds(r realBounds) bool {
+	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
+		return false
+	}
+	cmp := a.compareLiteral(r.min, r.max)
+	if cmp > 0 {
+		return true
+	}
+	return cmp == 0 && (r.flags&minInclusive == 0 || r.flags&maxInclusive == 0)
 }
 
 func impossibleLenBounds(r lenBounds) bool {
@@ -637,6 +741,10 @@ func (a *Arena) singleInt(r intBounds) bool {
 	return r.flags&(hasMin|hasMax) == hasMin|hasMax && r.min == r.max
 }
 
+func (a *Arena) singleReal(r realBounds) bool {
+	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && a.compareLiteral(r.min, r.max) == 0
+}
+
 func singleFloat(r floatBounds) bool {
 	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && r.min == r.max
 }
@@ -648,6 +756,11 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 		a.scratch = append(a.scratch, constraintInt, byte(n.ints.flags))
 		a.scratch = a.putIntLiteral(a.scratch, n.ints.min)
 		a.scratch = a.putIntLiteral(a.scratch, n.ints.max)
+	}
+	if n.reals.flags != 0 {
+		a.scratch = append(a.scratch, constraintReal, byte(n.reals.flags))
+		a.scratch = a.putRealLiteral(a.scratch, n.reals.min)
+		a.scratch = a.putRealLiteral(a.scratch, n.reals.max)
 	}
 	if n.floats.flags != 0 {
 		a.scratch = append(a.scratch, constraintFloat, byte(n.floats.flags))
@@ -725,6 +838,13 @@ func constraintDataFromNorm(n normConstraint) constraintData {
 		d.intMax = n.ints.max
 	}
 
+	if n.reals.flags != 0 {
+		d.flags |= constraintReal
+		d.realFlags = n.reals.flags
+		d.realMin = n.reals.min
+		d.realMax = n.reals.max
+	}
+
 	if n.floats.flags != 0 {
 		d.flags |= constraintFloat
 		d.floatFlags = n.floats.flags
@@ -761,7 +881,7 @@ func (a *Arena) sortUniqueTypes(v []TypeID) []TypeID {
 	sort.Slice(v, func(i, j int) bool { return a.compareLiteral(v[i], v[j]) < 0 })
 	out := v[:0]
 	for _, id := range v {
-		if len(out) == 0 || out[len(out)-1] != id {
+		if len(out) == 0 || a.compareLiteral(out[len(out)-1], id) != 0 {
 			out = append(out, id)
 		}
 	}
@@ -773,6 +893,9 @@ func (a *Arena) sortUniqueTypes(v []TypeID) []TypeID {
 // values.
 func (a *Arena) compareLiteral(x, y TypeID) int {
 	xn, yn := a.Node(x), a.Node(y)
+	if (xn.kind == IntLit || xn.kind == RealLit) && (yn.kind == IntLit || yn.kind == RealLit) {
+		return a.compareRealNumbers(x, y)
+	}
 	if xn.kind < yn.kind {
 		return -1
 	}
@@ -833,6 +956,8 @@ func (a *Arena) literalCompat(base, lit TypeID) bool {
 		return lk == BoolLit
 	case Int:
 		return lk == IntLit
+	case Real:
+		return lk == IntLit || lk == RealLit
 	case Float:
 		// TODO(i4k): not sure if we should allow int here but allowing makes it easier to use...
 		// for context, this is used in several cases.
@@ -840,7 +965,7 @@ func (a *Arena) literalCompat(base, lit TypeID) bool {
 		//      maybe we should require (float, x == 3.0) to be explicit.
 		// ex2: (float, x IN [1, 2])
 		//      maybe we should require (float, x IN [1.0, 2.0])
-		return lk == FloatLit || (lk == IntLit && a.isIntSmall(ln.data))
+		return lk == FloatLit || lk == RealLit || (lk == IntLit && a.isIntSmall(ln.data))
 	case String:
 		return lk == StringLit
 	}
@@ -854,13 +979,27 @@ func (a *Arena) literalSatisfiesNormConstraint(id TypeID, n normConstraint) bool
 			return false
 		}
 	}
+	if n.reals.flags != 0 {
+		if (node.kind != IntLit && node.kind != RealLit) || !a.checkRealLiteralBounds(id, n.reals) {
+			return false
+		}
+	}
 	if n.floats.flags != 0 {
 		var v float64
 		switch node.kind {
 		case IntLit:
+			if !a.isIntSmall(node.data) {
+				return false
+			}
 			v = float64(a.int64(node.data))
 		case FloatLit:
 			v = a.floats[node.data]
+		case RealLit:
+			var ok bool
+			v, ok = a.realToFloat64(id)
+			if !ok {
+				return false
+			}
 		default:
 			return false
 		}
@@ -889,6 +1028,15 @@ func (a *Arena) intConstraintNorm(id ConstraintID) normConstraint {
 	return n
 }
 
+func (a *Arena) realConstraintNorm(id ConstraintID) normConstraint {
+	d := a.constraints[id]
+	n := normConstraint{}
+	if d.flags&constraintReal != 0 {
+		n.reals = realBounds{flags: d.realFlags, min: d.realMin, max: d.realMax}
+	}
+	return n
+}
+
 func (a *Arena) checkIntLiteralBounds(id TypeID, r intBounds) bool {
 	n := a.Node(id)
 	if n.kind != IntLit {
@@ -899,6 +1047,25 @@ func (a *Arena) checkIntLiteralBounds(id TypeID, r intBounds) bool {
 	}
 	if r.flags&hasMax != 0 && a.compareInts(n.data, a.Node(r.max).data) > 0 {
 		return false
+	}
+	return true
+}
+
+func (a *Arena) checkRealLiteralBounds(id TypeID, r realBounds) bool {
+	if a.Node(id).kind != IntLit && a.Node(id).kind != RealLit {
+		return false
+	}
+	if r.flags&hasMin != 0 {
+		cmp := a.compareLiteral(id, r.min)
+		if cmp < 0 || cmp == 0 && r.flags&minInclusive == 0 {
+			return false
+		}
+	}
+	if r.flags&hasMax != 0 {
+		cmp := a.compareLiteral(id, r.max)
+		if cmp > 0 || cmp == 0 && r.flags&maxInclusive == 0 {
+			return false
+		}
 	}
 	return true
 }

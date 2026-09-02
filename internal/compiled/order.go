@@ -45,10 +45,20 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 		return bn.kind == Null
 	case BoolLit:
 		return bn.kind == Bool
+	case Int:
+		return bn.kind == Real
 	case IntLit:
-		return bn.kind == Int
+		switch bn.kind {
+		case Int, Real:
+			return true
+		case RealLit:
+			return x.compareLiteral(a, b) == 0
+		}
+		return false
 	case FloatLit:
 		return bn.kind == Float
+	case RealLit:
+		return bn.kind == Real
 	case StringLit:
 		return bn.kind == String
 	case List:
@@ -130,7 +140,7 @@ func (x *Arena) findField(fields []Field, name string) int {
 
 func (x *Arena) isLiteral(id TypeID) bool {
 	switch x.Node(id).kind {
-	case Null, BoolLit, IntLit, FloatLit, StringLit:
+	case Null, BoolLit, IntLit, FloatLit, RealLit, StringLit:
 		return true
 	}
 	return false
@@ -145,6 +155,9 @@ func (x *Arena) literalSatisfiesConstraint(lit TypeID, id ConstraintID) bool {
 	if d.flags&constraintInt != 0 {
 		n.ints = intBounds{flags: d.intFlags, min: d.intMin, max: d.intMax}
 	}
+	if d.flags&constraintReal != 0 {
+		n.reals = realBounds{flags: d.realFlags, min: d.realMin, max: d.realMax}
+	}
 	if d.flags&constraintFloat != 0 {
 		n.floats = floatBounds{flags: d.floatFlags, min: d.numMin, max: d.numMax}
 	}
@@ -156,7 +169,7 @@ func (x *Arena) literalSatisfiesConstraint(lit TypeID, id ConstraintID) bool {
 	}
 	if d.flags&constraintEnum != 0 {
 		for _, v := range x.constraintEnums[d.enum.off : d.enum.off+d.enum.len] {
-			if v == lit {
+			if x.compareLiteral(v, lit) == 0 {
 				return true
 			}
 		}
@@ -191,6 +204,11 @@ func (x *Arena) constraintSubset(a, b ConstraintID) bool {
 			return false
 		}
 	}
+	if bd.flags&constraintReal != 0 {
+		if ad.flags&constraintReal == 0 || !x.realBoundsSubset(ad, bd) {
+			return false
+		}
+	}
 	if bd.flags&constraintFloat != 0 {
 		if ad.flags&constraintFloat == 0 || !numberBoundsSubset(ad, bd) {
 			return false
@@ -207,6 +225,39 @@ func (x *Arena) constraintSubset(a, b ConstraintID) bool {
 func (x *Arena) intBoundsSubset(a, b constraintData) bool {
 	return x.lowerIntStronger(a.intFlags, a.intMin, b.intFlags, b.intMin) &&
 		x.upperIntStronger(a.intFlags, a.intMax, b.intFlags, b.intMax)
+}
+
+func (x *Arena) realBoundsSubset(a, b constraintData) bool {
+	return x.lowerRealStronger(a.realFlags, a.realMin, b.realFlags, b.realMin) &&
+		x.upperRealStronger(a.realFlags, a.realMax, b.realFlags, b.realMax)
+}
+
+func (x *Arena) lowerRealStronger(af boundFlags, av TypeID, bf boundFlags, bv TypeID) bool {
+	if bf&hasMin == 0 {
+		return true
+	}
+	if af&hasMin == 0 {
+		return false
+	}
+	cmp := x.compareLiteral(av, bv)
+	if cmp > 0 {
+		return true
+	}
+	return cmp == 0 && (bf&minInclusive != 0 || af&minInclusive == 0)
+}
+
+func (x *Arena) upperRealStronger(af boundFlags, av TypeID, bf boundFlags, bv TypeID) bool {
+	if bf&hasMax == 0 {
+		return true
+	}
+	if af&hasMax == 0 {
+		return false
+	}
+	cmp := x.compareLiteral(av, bv)
+	if cmp < 0 {
+		return true
+	}
+	return cmp == 0 && (bf&maxInclusive != 0 || af&maxInclusive == 0)
 }
 
 func (x *Arena) lowerIntStronger(af boundFlags, av TypeID, bf boundFlags, bv TypeID) bool {

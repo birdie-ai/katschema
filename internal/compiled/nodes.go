@@ -32,6 +32,8 @@ const (
 	Object
 	Sum
 	Refined
+	Real
+	RealLit
 )
 
 func (k Kind) String() string {
@@ -48,6 +50,8 @@ func (k Kind) String() string {
 		return "int"
 	case Float:
 		return "number"
+	case Real:
+		return "real"
 	case String:
 		return "string"
 	case BoolLit:
@@ -56,6 +60,8 @@ func (k Kind) String() string {
 		return "int literal"
 	case FloatLit:
 		return "number literal"
+	case RealLit:
+		return "real literal"
 	case StringLit:
 		return "string literal"
 	case List:
