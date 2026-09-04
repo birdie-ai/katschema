@@ -45,8 +45,9 @@ func TestCompileCanonicalizeInt(t *testing.T) {
 		t.Fatalf("canonical zero was not interned: %d != %d", zero, negzero)
 	}
 	for _, id := range []TypeID{x, y, z, zero, negzero} {
-		if got := a.Node(id).Kind(); got != IntLit {
-			t.Fatalf("kind %s is different than %s", got, IntLit)
+		atom, ok := a.Literal(id)
+		if !ok || a.Node(atom).Kind() != IntAtom {
+			t.Fatalf("compiled literal %d is not an integer literal", id)
 		}
 	}
 }
@@ -66,7 +67,11 @@ func TestIntegerLiteralFastPath(t *testing.T) {
 	} {
 		a := NewArena()
 		id := compileRawInt(t, a, val)
-		if data := a.Node(id).data; data <= 0 {
+		atom, ok := a.Literal(id)
+		if !ok {
+			t.Fatalf("compiled literal %d is not a singleton", id)
+		}
+		if data := a.Node(atom).data; data <= 0 {
 			t.Fatalf("unexpected data %d, expected positive value", data)
 		}
 		if got := len(a.bigInts); got != 1 {
@@ -89,7 +94,11 @@ func TestIntegerLiteralFastPath(t *testing.T) {
 		t.Run("bigInt/"+val, func(t *testing.T) {
 			a := NewArena()
 			id := compileRawInt(t, a, val)
-			if data := a.Node(id).data; data >= 0 {
+			atom, ok := a.Literal(id)
+			if !ok {
+				t.Fatalf("compiled literal %d is not a singleton", id)
+			}
+			if data := a.Node(atom).data; data >= 0 {
 				t.Fatalf("unexpected data %d, expected a negative value", data)
 			}
 			if got := len(a.bigInts); got != 2 {
@@ -121,10 +130,18 @@ func TestBigIntCompareInts(t *testing.T) {
 	a := NewArena()
 	xx := compileRawInt(t, a, google)
 	zz := compileRawInt(t, a, z.String())
-	if got := a.compareInts(a.Node(xx).data, a.Node(zz).data); got != x.Cmp(&z) {
+	xxAtom, ok := a.Literal(xx)
+	if !ok {
+		t.Fatalf("compiled literal %d is not a singleton", xx)
+	}
+	zzAtom, ok := a.Literal(zz)
+	if !ok {
+		t.Fatalf("compiled literal %d is not a singleton", zz)
+	}
+	if got := a.compareInts(a.Node(xxAtom).data, a.Node(zzAtom).data); got != x.Cmp(&z) {
 		t.Fatalf("compareInts(x, z) != x.Cmp(z): %d != %d", got, x.Cmp(&z))
 	}
-	if got := a.compareInts(a.Node(zz).data, a.Node(xx).data); got != z.Cmp(&x) {
+	if got := a.compareInts(a.Node(zzAtom).data, a.Node(xxAtom).data); got != z.Cmp(&x) {
 		t.Fatalf("compareInts(z, x) != z.Cmp(x): %d != %d", got, z.Cmp(&x))
 	}
 }

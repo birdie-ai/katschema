@@ -525,12 +525,31 @@ An email can be validated and normalized using `email(x)`:
 The following primitive types are builtin:
 
 * `string`: UTF-8 string.
-* `float`: 64-bit floating point.
+* `real`: mathematical real number with exact decimal literals and dense bounds.
+* `float32`: finite numeric values accepted by IEEE-754 binary32 conversion.
+* `float64`: finite numeric values accepted by IEEE-754 binary64 conversion.
+* `float`: alias for `float64`.
 * `bool`: `true` or `false`.
-* `int`: alias for `int64`.
+* `int`: mathematical integer.
 * `uint`: alias for `uint64`.
 * `int8`, `int16`, `int32`, `int64`: signed integers.
 * `uint8`, `uint16`, `uint32`, `uint64`: unsigned integers.
+
+### Floating-point conversion
+
+For a numeric value `x`, let `round32(x)` and `round64(x)` be the IEEE-754
+round-to-nearest, ties-to-even conversions to binary32 and binary64. A value
+is accepted by `float32` or `float64` when the corresponding conversion is
+finite and does not underflow or overflow. The conversion may be inexact:
+`0.1` is therefore a valid `float64` value even though the exact mathematical
+real `0.1` is not itself a binary64 value.
+
+The accepted value sets are consequently:
+
+```text
+float32 = { x in real | round32(x) succeeds and is finite }
+float64 = { x in real | round64(x) succeeds and is finite }
+```
 
 ## Collection types
 

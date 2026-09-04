@@ -107,14 +107,9 @@ func TestDSL(t *testing.T) {
 			want: `(int)|(string)`,
 		},
 		{
-			name: "sum of three types",
-			root: Sum(Int(), String(), Float()),
-			want: `(int)|(string)|(float)`,
-		},
-		{
-			name: "sum of four types",
-			root: Sum(Int(), String(), Float(), Bool()),
-			want: `(int)|(string)|(float)|(bool)`,
+			name: "sum of types",
+			root: Sum(Int(), String(), Float(), Real()),
+			want: `(int)|(string)|(float)|(real)`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1,4 +1,5 @@
-package parser
+// Package decimal defines the canonical representation of a decimal number.
+package decimal
 
 import (
 	"errors"
@@ -6,40 +7,40 @@ import (
 	"math"
 )
 
-// DecimalParts is a scaled exact decimal representation.
-// It uses the scaled decimal representation below:
-//
-//	Digits * 10^Exp
-//
-// The Digits will never have leading or trailing zeroes, except zero itself.
-type DecimalParts struct {
-	Exp    int64
-	Digits []byte
-	Neg    bool
-}
-
 var (
 	ErrParseDecimal            = errors.New("parsing decimal number")
 	ErrParseDecimalExpMissing  = fmt.Errorf("%w: missing exponent digits", ErrParseDecimal)
 	ErrParseDecimalExpOverflow = fmt.Errorf("%w: exponent overflow", ErrParseDecimal)
 )
 
-// Decimal parses raw into a canonical exact decimal.
+// Number is a scaled exact decimal representation.
+// It uses the scaled decimal representation below:
+//
+//	Digits * 10^Exp
+//
+// The Digits will never have leading or trailing zeroes, except zero itself.
+type Number struct {
+	Exp    int64
+	Digits []byte
+	Neg    bool
+}
+
+// Parse parses raw into a canonical exact decimal number.
 // The `buf` is a scratch storage for the digits coefficients.
 // This is function is designed to be allocation free given that cap(buf) == len(raw).
 // Note that buf can grow and in such case the new pointer is returned in the
-// [DecimalParts.Digits] slice.
+// [Number.Digits] slice.
 //
 // Advanced usage:
 // The raw and buf may share the same backing array but only when buf starts at raw
 // is supported, and if used in this way, it's an allocation-free destructive parser.
 //
-//	dec, err := parse.Decimal(raw, raw[:0])
+//	dec, err := decimal.Parse(raw, raw[:0])
 //
 // after this call, raw is mutated and dec.Digits owns the array.
-func Decimal(raw []byte, buf []byte) (DecimalParts, error) {
+func Parse(raw []byte, buf []byte) (Number, error) {
 	if len(raw) == 0 {
-		return DecimalParts{}, fmt.Errorf("%w: missing digits", ErrParseDecimal)
+		return Number{}, fmt.Errorf("%w: missing digits", ErrParseDecimal)
 	}
 
 	buf = buf[:0]
@@ -50,21 +51,21 @@ func Decimal(raw []byte, buf []byte) (DecimalParts, error) {
 		pos++
 
 		if pos == len(raw) {
-			return DecimalParts{}, fmt.Errorf("%w: missing digits", ErrParseDecimal)
+			return Number{}, fmt.Errorf("%w: missing digits", ErrParseDecimal)
 		}
 	}
 
 	if !isDigit(raw[pos]) {
-		return DecimalParts{}, fmt.Errorf("%w: missing integer digits", ErrParseDecimal)
+		return Number{}, fmt.Errorf("%w: missing integer digits", ErrParseDecimal)
 	}
 
-	// NOTE(i4k): this handles JSON number special case of forbidding numbers with a
-	// leading zero, eg.: 01
+	// This handles the JSON number special case of forbidding numbers with a
+	// leading zero, for example 01.
 	if raw[pos] == '0' {
 		buf = append(buf, '0')
 		pos++
 		if pos < len(raw) && isDigit(raw[pos]) {
-			return DecimalParts{}, fmt.Errorf("%w: malformed number with leading zero", ErrParseDecimal)
+			return Number{}, fmt.Errorf("%w: malformed number with leading zero", ErrParseDecimal)
 		}
 	} else {
 		for pos < len(raw) && isDigit(raw[pos]) {
@@ -73,9 +74,7 @@ func Decimal(raw []byte, buf []byte) (DecimalParts, error) {
 		}
 	}
 
-	// NOTE(i4k): we accumulate both integer and fractional into a single coefficient
-	// digits slice.
-
+	// Accumulate the integer and fractional parts into one coefficient.
 	fracLen := 0
 	if pos < len(raw) && raw[pos] == '.' {
 		pos++
@@ -86,16 +85,13 @@ func Decimal(raw []byte, buf []byte) (DecimalParts, error) {
 		}
 		fracLen = pos - fracStart
 		if fracLen == 0 {
-			return DecimalParts{}, fmt.Errorf("%w: missing fracional part", ErrParseDecimal)
+			return Number{}, fmt.Errorf("%w: missing fracional part", ErrParseDecimal)
 		}
 	}
 
-	// NOTE(i4k): here we canonicalize the digits before parsing the exponent.
-	// eg.:
-	//   1.0000e-1 == 1e-1
-	//   1.00001   == 100001e-5
-	// This is important because we want to check for exp overflow in a single place.
-
+	// Canonicalize the coefficient before parsing the exponent. For example:
+	// 1.0000e-1 == 1e-1 and 1.00001 == 100001e-5. This lets exponent overflow
+	// be checked in one place.
 	start := 0
 	for start < len(buf) && buf[start] == '0' {
 		start++
@@ -120,18 +116,16 @@ func Decimal(raw []byte, buf []byte) (DecimalParts, error) {
 		adjust = int64(trailing) - int64(fracLen)
 	}
 
-	exp := adjust // exp inferred from digits
+	exp := adjust
 	if pos < len(raw) {
-		// NOTE(i4k): at this point only 'e' and 'E' are expected.
-
 		if c := raw[pos]; c != 'e' && c != 'E' {
-			return DecimalParts{}, fmt.Errorf("%w: unexpected %c", ErrParseDecimal, c)
+			return Number{}, fmt.Errorf("%w: unexpected %c", ErrParseDecimal, c)
 		}
 		pos++
 		if allZeroes {
 			n, err := scanExp(raw[pos:])
 			if err != nil {
-				return DecimalParts{}, err
+				return Number{}, err
 			}
 			pos += n
 		} else {
@@ -139,18 +133,18 @@ func Decimal(raw []byte, buf []byte) (DecimalParts, error) {
 			var err error
 			exp, n, err = parseExp(raw[pos:], adjust)
 			if err != nil {
-				return DecimalParts{}, err
+				return Number{}, err
 			}
 			pos += n
 		}
 	}
 	if pos != len(raw) {
-		return DecimalParts{}, fmt.Errorf("%w: unexpected %c", ErrParseDecimal, raw[pos])
+		return Number{}, fmt.Errorf("%w: unexpected %c", ErrParseDecimal, raw[pos])
 	}
 	if allZeroes {
-		return DecimalParts{Digits: buf}, nil
+		return Number{Digits: buf}, nil
 	}
-	return DecimalParts{Neg: neg, Digits: buf, Exp: exp}, nil
+	return Number{Neg: neg, Digits: buf, Exp: exp}, nil
 }
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }

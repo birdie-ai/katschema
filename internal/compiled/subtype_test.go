@@ -193,6 +193,70 @@ func TestSubtype(t *testing.T) {
 			),
 			want: true,
 		},
+		{
+			name: "(real) subtyping honor constraint",
+			a:    ks.Where(ks.Real(), ks.Binary(ks.X(), ks.Gt, ks.DecimalExpr("1.0"))),
+			b:    ks.Where(ks.Real(), ks.Binary(ks.X(), ks.Ge, ks.DecimalExpr("1"))),
+			want: true,
+		},
+		{
+			name: "(real) subtyping honor constraint - reverse",
+			b:    ks.Where(ks.Real(), ks.Binary(ks.X(), ks.Gt, ks.DecimalExpr("1.0"))),
+			a:    ks.Where(ks.Real(), ks.Binary(ks.X(), ks.Ge, ks.DecimalExpr("1"))),
+		},
+		{
+			name: "check (int) is a subtype of (real)",
+			a:    ks.Int(),
+			b:    ks.Real(),
+			want: true,
+		},
+		{
+			name: "check (float32) is a subtype of (float64)",
+			a:    ks.Float32(),
+			b:    ks.Float64(),
+			want: true,
+		},
+		{
+			name: "check (float64) is not a subtype of (float32)",
+			a:    ks.Float64(),
+			b:    ks.Float32(),
+			want: false,
+		},
+		{
+			name: "check (float32) is a subtype of (real)",
+			a:    ks.Float32(),
+			b:    ks.Real(),
+			want: true,
+		},
+		{
+			name: "check (float64) is a subtype of (real)",
+			a:    ks.Float64(),
+			b:    ks.Real(),
+			want: true,
+		},
+		{
+			name: "check (real) is not a subtype of (float32)",
+			a:    ks.Real(),
+			b:    ks.Float32(),
+			want: false,
+		},
+		{
+			name: "check (real) is not a subtype of (float64)",
+			a:    ks.Real(),
+			b:    ks.Float64(),
+			want: false,
+		},
+		{
+			name: "check (float) is an alias of (float64)",
+			a:    ks.Float(),
+			b:    ks.Float64(),
+			want: true,
+		},
+		{
+			name: "check (real) is not a subtype of (int)",
+			b:    ks.Int(),
+			a:    ks.Real(),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			arena := NewArena()

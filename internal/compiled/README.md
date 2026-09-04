@@ -59,6 +59,22 @@ The example above covers just the easy aspect of the schema changes, the other q
 to "widening" or "narrowing" of schemas are solved by lattices but a canonical representation is
 the basis for having it.
 
+### Literal canonicalization
+
+All literals are interned as a schema refinement of its type with a equality constraint.
+Example:
+
+```
+10
+```
+is interned as:
+```
+(int, x == 10)
+```
+
+which means that such schema when found in the source is semantically the same as a literal
+value in the source.
+
 ## Type refinements
 
 A refined type is a base type modified through constraints. For example, the type `(int, x > 0)`

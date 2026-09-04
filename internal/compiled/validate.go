@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"unicode/utf8"
 
+	"github.com/birdie-ai/katschema/math/decimal"
 	"github.com/birdie-ai/katschema/parser/ast"
+	"github.com/birdie-ai/katschema/parser/token"
 )
 
 // Valid reports whether the literal AST rooted at value is accepted by typ.
@@ -28,13 +30,15 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		return t.Node(value).Kind() == ast.Bool
 	case Int:
 		return astInt(t, value)
+	case Real:
+		return astReal(t, value)
 	case Float:
 		return asFloat(t, value)
 	case String:
 		return t.Node(value).Kind() == ast.String
-	case BoolLit:
+	case BoolAtom:
 		return t.Node(value).Kind() == ast.Bool && t.Bool(value) == (n.data != 0)
-	case IntLit:
+	case IntAtom:
 		if n.data > 0 {
 			v, ok := astInt64(t, value)
 			return ok && v == a.ints[n.data]
@@ -47,13 +51,20 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 			return false
 		}
 		return a.equalBigInts(n.data, v.Sign() < 0, v.Bytes())
-	case FloatLit:
+	case FloatAtom:
 		if t.Node(value).Kind() != ast.Decimal {
 			return false
 		}
 		v, err := strconv.ParseFloat(t.Decimal(value), 64)
 		return err == nil && floatEqual(v, a.floats[n.data])
-	case StringLit:
+	case RealAtom:
+		got, ok := astRealNumber(t, value)
+		if !ok {
+			return false
+		}
+		want, ok := a.realNumber(typ)
+		return ok && compareDecimalNumbers(got, want) == 0
+	case StringAtom:
 		return t.Node(value).Kind() == ast.String && t.String(value) == a.StringValue(StringID(n.data))
 	case List:
 		if t.Node(value).Kind() != ast.List {
@@ -161,6 +172,18 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 			return false
 		}
 	}
+	if d.flags&constraintReal != 0 {
+		v, ok := astRealNumber(t, value)
+		if !ok || !a.checkRealNumberBounds(v, d.realFlags, d.realMin, d.realMax) {
+			return false
+		}
+	}
+	if d.flags&constraintFloatConv != 0 {
+		v, ok := astRealNumber(t, value)
+		if !ok || !decimalCanBeFloat(v, d.format) {
+			return false
+		}
+	}
 	if d.flags&constraintFloat != 0 {
 		v, ok := astFloat64(t, value)
 		if !ok || !checkFloatBounds(v, d.floatFlags, d.numMin, d.numMax) {
@@ -208,6 +231,110 @@ func astInt(t *ast.Tree, id ast.NodeID) bool {
 	return ok
 }
 
+func astReal(t *ast.Tree, id ast.NodeID) bool {
+	_, ok := astRealNumber(t, id)
+	return ok
+}
+
+func astRealNumber(t *ast.Tree, id ast.NodeID) (decimalNumber, bool) {
+	switch t.Node(id).Kind() {
+	case ast.Int:
+		raw := t.Int(id)
+		var v big.Int
+		if _, ok := v.SetString(raw, 10); !ok {
+			return decimalNumber{}, false
+		}
+		text := v.String()
+		negative := len(text) > 0 && text[0] == '-'
+		if negative {
+			text = text[1:]
+		}
+		return decimalNumber{negative: negative, digits: []byte(text)}, true
+	case ast.Decimal:
+		parts, err := decimal.Parse([]byte(t.Decimal(id)), nil)
+		if err != nil {
+			return decimalNumber{}, false
+		}
+		return decimalNumber{negative: parts.Neg, digits: parts.Digits, exp: parts.Exp}, true
+	case ast.Schema:
+		s := t.Schema(id)
+		lit, ok := literalValue(t, id)
+		if !ok {
+			return decimalNumber{}, false
+		}
+		lk := t.Node(lit).Kind()
+		if lk != ast.Decimal {
+			return decimalNumber{}, false
+		}
+		parts, err := decimal.Parse([]byte(t.Decimal(lit)), nil)
+		if err != nil {
+			return decimalNumber{}, false
+		}
+		dec := decimalNumber{negative: parts.Neg, digits: parts.Digits, exp: parts.Exp}
+		switch t.Name(s.Type) {
+		case "float32":
+			if !decimalCanBeFloat(dec, f32Fmt) {
+				return decimalNumber{}, false
+			}
+		case "float64":
+			if !decimalCanBeFloat(dec, f64Fmt) {
+				return decimalNumber{}, false
+			}
+		}
+		return dec, true
+	default:
+		return decimalNumber{}, false
+	}
+}
+
+func literalValue(t *ast.Tree, id ast.NodeID) (ast.NodeID, bool) {
+	s := t.Schema(id)
+	if len(s.Clauses) != 1 {
+		return 0, false
+	}
+	constraint := t.Constraint(s.Clauses[0])
+	node := t.Node(constraint)
+	if node.Kind() != ast.Binary {
+		return 0, false
+	}
+	b := t.Binary(constraint)
+	if b.Op != token.Eq {
+		return 0, false
+	}
+	if isX(t, b.Left) {
+		return b.Right, true
+	}
+	return b.Left, true
+}
+
+func isX(t *ast.Tree, id ast.NodeID) bool {
+	return t.Node(id).Kind() == ast.Ident && t.Ident(id) == "x"
+}
+
+func (a *Arena) checkRealNumberBounds(v decimalNumber, flags boundFlags, minID, maxID TypeID) bool {
+	if flags&hasMin != 0 {
+		min, ok := a.realNumber(minID)
+		if !ok {
+			return false
+		}
+		cmp := compareDecimalNumbers(v, min)
+		if cmp < 0 || cmp == 0 && flags&minInclusive == 0 {
+			return false
+		}
+	}
+	if flags&hasMax != 0 {
+		max, ok := a.realNumber(maxID)
+		if !ok {
+			return false
+		}
+		cmp := compareDecimalNumbers(v, max)
+		if cmp > 0 || cmp == 0 && flags&maxInclusive == 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func astInt64(t *ast.Tree, id ast.NodeID) (int64, bool) {
 	var raw string
 	switch t.Node(id).Kind() {
@@ -228,25 +355,8 @@ func asFloat(t *ast.Tree, id ast.NodeID) bool {
 func astFloat64(t *ast.Tree, id ast.NodeID) (float64, bool) {
 	switch t.Node(id).Kind() {
 	case ast.Int:
-		// NOTE(i4k): the maximum integer representable in a float64 without loss of precision is 2^53.
-		// Here we are solving a subtle bug that happens whenever you interpret a JSON number value
-		// as integer in the application side, because when you parse a JSON number with only
-		// an integral part that's bigger than 2^53 you silently lose information.
-		// Better safe than sorry! we reject those cases and then the user must explicitly use the
-		// float number syntax in the source in order to explicitly tell that loss of precision is
-		// fine.
-		// OpenAPI spec has `integer` and `int64`: https://swagger.io/docs/specification/v3_0/data-models/data-types/#numbers
-		// but you have to protect yourself and sometimes buggy software don't even allow you to
-		// handle this properly: https://github.com/ogen-go/ogen/issues/1144
-
-		i, err := strconv.ParseInt(t.Int(id), 10, 64)
-		if err != nil {
-			return 0, false
-		}
-		if i > int64(2<<53) {
-			return 0, false
-		}
-		return float64(i), true
+		v, err := strconv.ParseFloat(t.Int(id), 64)
+		return canonicalFloat(v), err == nil
 	case ast.Decimal:
 		v, err := strconv.ParseFloat(t.Decimal(id), 64)
 		return canonicalFloat(v), err == nil

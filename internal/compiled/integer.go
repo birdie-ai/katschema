@@ -151,20 +151,20 @@ func compareMagnitude(a, b []byte) int {
 	return bytes.Compare(a, b)
 }
 
-func (a *Arena) nextIntLiteral(id TypeID) TypeID {
-	return a.intLiteralAdd64(id, 1)
+func (a *Arena) nextIntAtom(id TypeID) TypeID {
+	return a.intAtomAdd64(id, 1)
 }
 
-func (a *Arena) prevIntLiteral(id TypeID) TypeID {
-	return a.intLiteralAdd64(id, -1)
+func (a *Arena) prevIntAtom(id TypeID) TypeID {
+	return a.intAtomAdd64(id, -1)
 }
 
-func (a *Arena) intLiteralAdd64(id TypeID, v int64) TypeID {
+func (a *Arena) intAtomAdd64(id TypeID, v int64) TypeID {
 	if v == 0 {
 		return id
 	}
 	n := a.Node(id)
-	if n.kind != IntLit {
+	if n.kind != IntAtom {
 		panic(n.kind.String())
 	}
 

@@ -16,16 +16,20 @@ func TestCompileIntern(t *testing.T) {
 	// synthetic, then it does not preserve source differences.
 
 	type testcase struct {
-		name string
-		x    func(*ast.Tree) ast.NodeID
-		y    func(*ast.Tree) ast.NodeID
+		name         string
+		x            func(*ast.Tree) ast.NodeID
+		y            func(*ast.Tree) ast.NodeID
+		checkLiteral bool
+		wantLiteral  bool
 	}
 
 	var z token.Span
 
 	for _, tc := range []testcase{
 		{
-			name: "same builtin type",
+			name:         "same builtin type",
+			checkLiteral: true,
+			wantLiteral:  false,
 			x: func(a *ast.Tree) ast.NodeID {
 				return a.AddSchema(a.AddName("int", z), nil, z)
 			},
@@ -52,12 +56,92 @@ func TestCompileIntern(t *testing.T) {
 			},
 		},
 		{
+			name:         "literal int and explicit equality schema",
+			checkLiteral: true,
+			wantLiteral:  true,
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddInt("1337", z)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(
+					a.AddName("int", z),
+					[]ast.NodeID{a.AddConstraint(a.AddBinary(
+						a.AddIdent("x", z), token.Eq, a.AddInt("1337", z), z), z)},
+					z,
+				)
+			},
+		},
+		{
 			name: "same literal float different syntax",
 			x: func(a *ast.Tree) ast.NodeID {
 				return a.AddDecimal("1.01", z)
 			},
 			y: func(a *ast.Tree) ast.NodeID {
 				return a.AddDecimal("1.01e0", z)
+			},
+		},
+		{
+			name:         "literal decimal and explicit equality schema",
+			checkLiteral: true,
+			wantLiteral:  true,
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddDecimal("1.01", z)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(
+					a.AddName("real", z),
+					[]ast.NodeID{a.AddConstraint(a.AddBinary(
+						a.AddIdent("x", z), token.Eq, a.AddDecimal("1.01", z), z), z)},
+					z,
+				)
+			},
+		},
+		{
+			name:         "literal bool and explicit equality schema",
+			checkLiteral: true,
+			wantLiteral:  true,
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddBool(true, z)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(
+					a.AddName("bool", z),
+					[]ast.NodeID{a.AddConstraint(a.AddBinary(
+						a.AddIdent("x", z), token.Eq, a.AddBool(true, z), z), z)},
+					z,
+				)
+			},
+		},
+		{
+			name:         "literal string and explicit equality schema",
+			checkLiteral: true,
+			wantLiteral:  true,
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddString("hello", z)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(
+					a.AddName("string", z),
+					[]ast.NodeID{a.AddConstraint(a.AddBinary(
+						a.AddIdent("x", z), token.Eq, a.AddString("hello", z), z), z)},
+					z,
+				)
+			},
+		},
+		{
+			name:         "literal null and explicit equality schema",
+			checkLiteral: true,
+			wantLiteral:  true,
+			x: func(a *ast.Tree) ast.NodeID {
+				return a.AddNull(z)
+			},
+			y: func(a *ast.Tree) ast.NodeID {
+				return a.AddSchema(
+					a.AddName("null", z),
+					[]ast.NodeID{a.AddConstraint(a.AddBinary(
+						a.AddIdent("x", z), token.Eq, a.AddNull(z), z), z)},
+					z,
+				)
 			},
 		},
 		{
@@ -313,6 +397,15 @@ func TestCompileIntern(t *testing.T) {
 			if xid != yid {
 				t.Fatalf("IDs differ: %d != %d", xid, yid)
 			}
+			if tc.checkLiteral {
+				_, gotLiteral := arena.Literal(xid)
+				if gotLiteral != tc.wantLiteral {
+					t.Fatalf("Literal(%d) = %t, want %t", xid, gotLiteral, tc.wantLiteral)
+				}
+				if tc.wantLiteral && arena.Node(xid).Kind() != Refined {
+					t.Fatalf("literal kind = %s, want %s", arena.Node(xid).Kind(), Refined)
+				}
+			}
 		})
 	}
 }
@@ -380,23 +473,23 @@ func TestConstraintNormalization(t *testing.T) {
 			cases: []ks.Value{
 				// (float, x >= 0, x <= 100)
 				ks.With(ks.Float(),
-					ks.Check(ks.Binary(x, ks.Ge, ks.FloatExpr(0))),
-					ks.Check(ks.Binary(x, ks.Le, ks.FloatExpr(100))),
+					ks.Check(ks.Binary(x, ks.Ge, ks.DecimalExpr("0"))),
+					ks.Check(ks.Binary(x, ks.Le, ks.DecimalExpr("100"))),
 				),
 				// (float, x >= 0 && x <= 100)
 				ks.With(ks.Float(), ks.Check(
 					ks.Binary(
-						ks.Binary(x, ks.Ge, ks.FloatExpr(0)),
+						ks.Binary(x, ks.Ge, ks.DecimalExpr("0")),
 						ks.And,
-						ks.Binary(x, ks.Le, ks.FloatExpr(100)),
+						ks.Binary(x, ks.Le, ks.DecimalExpr("100")),
 					)),
 				),
 				// (float, 0 <= x <= 100)
 				ks.With(ks.Float(), ks.Check(
 					ks.Binary(
-						ks.Binary(ks.FloatExpr(0), ks.Le, x),
+						ks.Binary(ks.DecimalExpr("0"), ks.Le, x),
 						ks.Le,
-						ks.FloatExpr(100),
+						ks.DecimalExpr("100"),
 					)),
 				),
 			},

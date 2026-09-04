@@ -29,6 +29,8 @@ type Arena struct {
 	bigInts     []bigInt
 	bigIntBytes []byte
 	floats      []float64
+	reals       []realValue
+	realBytes   []byte
 
 	refinements []refinement
 
@@ -51,13 +53,16 @@ type Arena struct {
 	// minimum size when we need this. I hope I don't regret this comment!
 	scratch []byte
 
-	anyID    TypeID
-	neverID  TypeID
-	nullID   TypeID
-	boolID   TypeID
-	intID    TypeID
-	floatID  TypeID
-	stringID TypeID
+	anyID     TypeID
+	neverID   TypeID
+	nullID    TypeID
+	boolID    TypeID
+	intID     TypeID
+	float32ID TypeID
+	float64ID TypeID
+	floatID   TypeID
+	realID    TypeID
+	stringID  TypeID
 }
 
 func NewArena() *Arena {
@@ -89,6 +94,7 @@ func (a *Arena) init() {
 	a.ints = append(a.ints, 0)
 	a.bigInts = append(a.bigInts, bigInt{})
 	a.floats = append(a.floats, 0)
+	a.reals = append(a.reals, realValue{})
 	a.refinements = append(a.refinements, refinement{})
 
 	a.constraints = append(a.constraints, constraintData{})
@@ -101,17 +107,23 @@ func (a *Arena) init() {
 	a.nullID = a.internSimple(Null)
 	a.boolID = a.internSimple(Bool)
 	a.intID = a.internSimple(Int)
-	a.floatID = a.internSimple(Float)
+	a.realID = a.internSimple(Real)
+	a.float32ID = a.internFloatFormat(f32Fmt)
+	a.float64ID = a.internFloatFormat(f64Fmt)
+	a.floatID = a.float64ID
 	a.stringID = a.internSimple(String)
 }
 
-func (a *Arena) Any() TypeID    { a.init(); return a.anyID }
-func (a *Arena) Never() TypeID  { a.init(); return a.neverID }
-func (a *Arena) Null() TypeID   { a.init(); return a.nullID }
-func (a *Arena) Bool() TypeID   { a.init(); return a.boolID }
-func (a *Arena) Int() TypeID    { a.init(); return a.intID }
-func (a *Arena) Float() TypeID  { a.init(); return a.floatID }
-func (a *Arena) String() TypeID { a.init(); return a.stringID }
+func (a *Arena) Any() TypeID     { a.init(); return a.anyID }
+func (a *Arena) Never() TypeID   { a.init(); return a.neverID }
+func (a *Arena) Null() TypeID    { a.init(); return a.nullID }
+func (a *Arena) Bool() TypeID    { a.init(); return a.boolID }
+func (a *Arena) Int() TypeID     { a.init(); return a.intID }
+func (a *Arena) Float() TypeID   { a.init(); return a.floatID }
+func (a *Arena) Float32() TypeID { a.init(); return a.float32ID }
+func (a *Arena) Float64() TypeID { a.init(); return a.float64ID }
+func (a *Arena) Real() TypeID    { a.init(); return a.realID }
+func (a *Arena) String() TypeID  { a.init(); return a.stringID }
 
 func (a *Arena) Len() int { a.init(); return len(a.nodes) - 1 }
 
@@ -184,41 +196,41 @@ func (a *Arena) internBool(v bool) TypeID {
 		x = 1
 	}
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(BoolLit), byte(x))
+	a.scratch = append(a.scratch, encodingVersion, byte(BoolAtom), byte(x))
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == BoolLit && n.data == x
+		return n.kind == BoolAtom && n.data == x
 	}); id != 0 {
 		return id
 	}
-	return a.appendNode(Node{kind: BoolLit, data: x}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: BoolAtom, data: x}, fp, a.hashHead[fp])
 }
 
 func (a *Arena) internInt(v int64) TypeID {
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(IntLit))
+	a.scratch = append(a.scratch, encodingVersion, byte(IntAtom))
 	a.scratch = put64(a.scratch, v)
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == IntLit && n.data > 0 && a.ints[n.data] == v
+		return n.kind == IntAtom && n.data > 0 && a.ints[n.data] == v
 	}); id != 0 {
 		return id
 	}
 	i := int32(len(a.ints))
 	a.ints = append(a.ints, v)
-	return a.appendNode(Node{kind: IntLit, data: i}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: IntAtom, data: i}, fp, a.hashHead[fp])
 }
 
 func (a *Arena) internRawBigInt(negative bool, mag []byte) TypeID {
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(IntLit))
+	a.scratch = append(a.scratch, encodingVersion, byte(IntAtom))
 	a.scratch = putBigInt(a.scratch, negative, mag)
 	fp := a.hash(a.scratch)
 	id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == IntLit && n.data < 0 && a.equalBigInts(n.data, negative, mag)
+		return n.kind == IntAtom && n.data < 0 && a.equalBigInts(n.data, negative, mag)
 	})
 	if id != 0 {
 		return id
@@ -227,7 +239,7 @@ func (a *Arena) internRawBigInt(negative bool, mag []byte) TypeID {
 	off := int32(len(a.bigIntBytes))
 	a.bigIntBytes = append(a.bigIntBytes, mag...)
 	a.bigInts = append(a.bigInts, makeBigInt(off, mag, negative))
-	return a.appendNode(Node{kind: IntLit, data: -i}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: IntAtom, data: -i}, fp, a.hashHead[fp])
 }
 
 func (a *Arena) internBigInt(v *big.Int) TypeID {
@@ -240,33 +252,67 @@ func (a *Arena) internBigInt(v *big.Int) TypeID {
 func (a *Arena) internFloat(v float64) TypeID {
 	v = canonicalFloat(v)
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(FloatLit))
+	a.scratch = append(a.scratch, encodingVersion, byte(FloatAtom))
 	a.scratch = putf64(a.scratch, v)
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == FloatLit && floatEqual(a.floats[n.data], v)
+		return n.kind == FloatAtom && floatEqual(a.floats[n.data], v)
 	}); id != 0 {
 		return id
 	}
 	i := int32(len(a.floats))
 	a.floats = append(a.floats, v)
-	return a.appendNode(Node{kind: FloatLit, data: i}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: FloatAtom, data: i}, fp, a.hashHead[fp])
 }
 
-func (a *Arena) internStringLit(s string) TypeID {
+func (a *Arena) internStringAtom(s string) TypeID {
 	name := a.internString(s)
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(StringLit))
+	a.scratch = append(a.scratch, encodingVersion, byte(StringAtom))
 	a.scratch = putstr(a.scratch, s)
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == StringLit && StringID(n.data) == name
+		return n.kind == StringAtom && StringID(n.data) == name
 	}); id != 0 {
 		return id
 	}
-	return a.appendNode(Node{kind: StringLit, data: int32(name)}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: StringAtom, data: int32(name)}, fp, a.hashHead[fp])
+}
+
+func (a *Arena) internLiteral(base, atom TypeID) TypeID {
+	constraint := a.internConstraint(normConstraint{enum: []TypeID{atom}})
+	return a.internRefined(base, constraint)
+}
+
+// Literal returns the scalar atom represented by id.
+// Atom nodes are kept as compact arena values, while compiled source literals
+// are represented by singleton refinements around those atoms.
+//
+// A refined type is a literal only when its constraint denotes exactly one
+// scalar value. In particular, this recognizes both compiler-emitted literals
+// and equivalent singleton schemas such as (int, x >= 10, x <= 10), while
+// rejecting non-singleton ranges and other refinements.
+func (a *Arena) Literal(id TypeID) (TypeID, bool) {
+	n := a.Node(id)
+	switch n.kind {
+	case Null, BoolAtom, IntAtom, FloatAtom, RealAtom, StringAtom:
+		return id, true
+	case Refined:
+		r := a.refinements[n.data]
+		d := a.constraints[r.constraint]
+		if d.flags&constraintEnum == 0 || d.enum.len != 1 {
+			return 0, false
+		}
+		atom := a.constraintEnums[d.enum.off]
+		if _, ok := a.Literal(atom); !ok || !a.atomSatisfiesConstraint(atom, r.constraint) {
+			return 0, false
+		}
+		return atom, true
+	default:
+		return 0, false
+	}
 }
 
 func (a *Arena) internList(elem TypeID) TypeID {
@@ -400,11 +446,11 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 
 	var hasTrue, hasFalse bool
 	for _, id := range flat {
-		n := a.Node(id)
-		if n.kind != BoolLit {
+		atom, ok := a.Literal(id)
+		if !ok || a.Node(atom).kind != BoolAtom {
 			continue
 		}
-		if n.data != 0 {
+		if a.Node(atom).data != 0 {
 			hasTrue = true
 		} else {
 			hasFalse = true
@@ -415,9 +461,11 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 	if hasTrue && hasFalse {
 		out := flat[:0] // reuse flat backing array.
 		for _, id := range flat {
-			if a.Node(id).kind != BoolLit {
-				out = append(out, id)
+			atom, ok := a.Literal(id)
+			if ok && a.Node(atom).kind == BoolAtom {
+				continue
 			}
+			out = append(out, id)
 		}
 		flat = append(out, a.boolID)
 	}

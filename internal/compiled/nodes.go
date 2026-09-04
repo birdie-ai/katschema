@@ -8,7 +8,7 @@ type (
 )
 
 // NOTE(i4k): DO NOT CHANGE the order of the kind consts below lightly because it affects
-// the partial ordering of types. Check [Arena.compareLiteral].
+// the partial ordering of types. Check [Arena.compareAtom].
 // It does not mean it cannot be changed but just that doing that will canonicalize
 // constraints like enums (and possibly others) differently and this could be catastrophic
 // if the compiled semantic AST is being saved/restored (not done now, maybe never, probably
@@ -23,15 +23,21 @@ const (
 	Int
 	Float
 	String
-	BoolLit
-	IntLit
-	FloatLit
-	StringLit
+
+	// Atom kinds are compact scalar payloads referenced by constraints, usually defined as
+	// expressions in the source code.
+	// One such source of atoms are literals because they are interned as refined types.
+	BoolAtom
+	IntAtom
+	FloatAtom
+	StringAtom
 	List
 	Tuple
 	Object
 	Sum
 	Refined
+	Real
+	RealAtom
 )
 
 func (k Kind) String() string {
@@ -48,16 +54,20 @@ func (k Kind) String() string {
 		return "int"
 	case Float:
 		return "number"
+	case Real:
+		return "real"
 	case String:
 		return "string"
-	case BoolLit:
-		return "bool literal"
-	case IntLit:
-		return "int literal"
-	case FloatLit:
-		return "number literal"
-	case StringLit:
-		return "string literal"
+	case BoolAtom:
+		return "bool atom"
+	case IntAtom:
+		return "int atom"
+	case FloatAtom:
+		return "number atom"
+	case RealAtom:
+		return "real atom"
+	case StringAtom:
+		return "string atom"
 	case List:
 		return "list"
 	case Tuple:

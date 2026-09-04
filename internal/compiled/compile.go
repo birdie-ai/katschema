@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strconv"
 
+	"github.com/birdie-ai/katschema/math/decimal"
 	"github.com/birdie-ai/katschema/parser/ast"
 	"github.com/birdie-ai/katschema/parser/token"
 )
@@ -58,18 +59,9 @@ func (c *compiler) error(id ast.NodeID, err error) error {
 func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 	n := c.t.Node(id)
 	switch n.Kind() {
-	case ast.Null:
-		return c.a.Null(), false, nil
-	case ast.Bool:
-		return c.a.internBool(c.t.Bool(id)), false, nil
-	case ast.Int:
-		t, err := c.intLiteral(id, c.t.Int(id))
+	case ast.Null, ast.Bool, ast.Int, ast.Decimal, ast.String:
+		t, err := c.scalarLiteral(id)
 		return t, false, err
-	case ast.Decimal:
-		t, err := c.floatLiteral(id, c.t.Decimal(id))
-		return t, false, err
-	case ast.String:
-		return c.a.internStringLit(c.t.String(id)), false, nil
 	case ast.List:
 		t, err := c.list(id)
 		return t, false, err
@@ -86,7 +78,49 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 	}
 }
 
-func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
+func (c *compiler) scalarLiteral(id ast.NodeID) (TypeID, error) {
+	atom, err := c.scalarLiteralAtom(id)
+	if err != nil {
+		return 0, err
+	}
+
+	var base TypeID
+	switch c.t.Node(id).Kind() {
+	case ast.Null:
+		base = c.a.Null()
+	case ast.Bool:
+		base = c.a.Bool()
+	case ast.Int:
+		base = c.a.Int()
+	case ast.Decimal:
+		base = c.a.Real()
+	case ast.String:
+		base = c.a.String()
+	default:
+		panic("not a scalar literal")
+	}
+	return c.a.internLiteral(base, atom), nil
+}
+
+func (c *compiler) scalarLiteralAtom(id ast.NodeID) (TypeID, error) {
+	switch c.t.Node(id).Kind() {
+	case ast.Null:
+		// NOTE(i4k): Null is both the null type and its only literal value.
+		return c.a.Null(), nil
+	case ast.Bool:
+		return c.a.internBool(c.t.Bool(id)), nil
+	case ast.Int:
+		return c.intAtom(id, c.t.Int(id))
+	case ast.Decimal:
+		return c.realAtom(id, c.t.Decimal(id))
+	case ast.String:
+		return c.a.internStringAtom(c.t.String(id)), nil
+	default:
+		return 0, c.errorf(id, "%s is not a scalar literal", c.t.Node(id).Kind())
+	}
+}
+
+func (c *compiler) intAtom(id ast.NodeID, raw string) (TypeID, error) {
 	if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		return c.a.internInt(v), nil
 	}
@@ -98,12 +132,13 @@ func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
 	return c.a.internRawBigInt(v.Sign() < 0, v.Bytes()), nil
 }
 
-func (c *compiler) floatLiteral(id ast.NodeID, raw string) (TypeID, error) {
-	v, err := strconv.ParseFloat(raw, 64)
+func (c *compiler) realAtom(id ast.NodeID, raw string) (TypeID, error) {
+	input := []byte(raw)
+	parts, err := decimal.Parse(input, input[:0])
 	if err != nil {
 		return 0, c.errorf(id, "invalid number literal %q", raw)
 	}
-	return c.a.internFloat(v), nil
+	return c.a.internRawReal(parts.Neg, parts.Digits, parts.Exp), nil
 }
 
 func (c *compiler) list(id ast.NodeID) (TypeID, error) {
@@ -219,9 +254,15 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	initial := normConstraint{}
 	if n := c.a.Node(base); n.kind == Refined {
 		r := c.a.refinements[n.data]
-		if c.a.Node(r.base).kind == Int {
+		base = r.base
+		switch c.a.Node(r.base).kind {
+		case Int:
 			initial = c.a.intConstraintNorm(r.constraint)
-			base = r.base
+		case Real:
+			initial = c.a.realConstraintNorm(r.constraint)
+		default:
+			// TODO(i4k): finish this
+			panic("still unsupported refining refinements other than (int) and (real)")
 		}
 	}
 
@@ -232,13 +273,17 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	if optional && !field {
 		return 0, false, c.error(id, ErrOptionalUnexpected)
 	}
-	constraint, impossible, err := c.extendNormalizeConstraints(base, initial, s.Clauses)
+	normConstraint, impossible, err := c.extendNormalizeConstraints(base, initial, s.Clauses)
 	if err != nil {
 		return 0, false, err
 	}
 	if impossible {
 		return c.a.Never(), optional, nil
 	}
+	if emptyConstraint(normConstraint) {
+		return base, optional, nil
+	}
+	constraint := c.a.internConstraint(normConstraint)
 	return c.a.internRefined(base, constraint), optional, nil
 }
 
@@ -247,6 +292,9 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 	case ast.Name:
 		name := c.t.Name(id)
 		if typ, ok := c.a.intBuiltinType(name); ok {
+			return typ, nil
+		}
+		if typ, ok := c.a.floatBuiltinType(name); ok {
 			return typ, nil
 		}
 		switch name {
@@ -260,6 +308,8 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 			return c.a.Bool(), nil
 		case "int":
 			return c.a.Int(), nil
+		case "real":
+			return c.a.Real(), nil
 		case "float":
 			return c.a.Float(), nil
 		case "string":

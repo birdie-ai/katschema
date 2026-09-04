@@ -16,6 +16,12 @@ type intBounds struct {
 	max   TypeID
 }
 
+type realBounds struct {
+	flags boundFlags
+	min   TypeID
+	max   TypeID
+}
+
 type lenBounds struct {
 	flags boundFlags
 	min   int64
@@ -30,6 +36,8 @@ type floatBounds struct {
 
 type normConstraint struct {
 	ints   intBounds
+	reals  realBounds
+	format floatFmt
 	floats floatBounds
 	length lenBounds
 	enum   []TypeID // nil means no enum restriction; empty non-nil means impossible.
@@ -64,6 +72,11 @@ type constraintData struct {
 	intMin   TypeID
 	intMax   TypeID
 
+	realFlags boundFlags
+	realMin   TypeID
+	realMax   TypeID
+	format    floatFmt
+
 	floatFlags boundFlags
 	numMin     float64
 	numMax     float64
@@ -80,13 +93,11 @@ const (
 	constraintFloat
 	constraintLen
 	constraintEnum
+	constraintReal
+	constraintFloatConv
 )
 
-func (c *compiler) normalizeConstraints(base TypeID, clauses []ast.NodeID) (ct ConstraintID, impossible bool, err error) {
-	return c.extendNormalizeConstraints(base, normConstraint{}, clauses)
-}
-
-func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstraint, clauses []ast.NodeID) (ct ConstraintID, impossible bool, err error) {
+func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstraint, clauses []ast.NodeID) (ct normConstraint, impossible bool, err error) {
 	n := normalizer{c: c, base: base, n: initial}
 	for _, id := range clauses {
 		if c.t.Node(id).Kind() != ast.Constraint {
@@ -94,7 +105,7 @@ func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstrain
 		}
 		err := n.consume(c.t.Constraint(id))
 		if err != nil {
-			return 0, false, err
+			return normConstraint{}, false, err
 		}
 	}
 	return n.finish()
@@ -265,7 +276,7 @@ func (n *normalizer) compare(left ast.NodeID, op token.Kind, right ast.NodeID) e
 	return n.c.errorf(left, "constraint comparison must reference x or len(x)")
 }
 
-// equal canonicalize equality checks as enums. THis is great because it composes
+// equal canonicalize equality checks as enums. This is great because it composes
 // nicely: (int, x == 1, x == 2) and (int, x IN [1, 2]) are semantically the same.
 func (n *normalizer) equal(left, right ast.NodeID) error {
 	values, err := n.equalityValues(left, right)
@@ -300,10 +311,11 @@ func (n *normalizer) equalityValues(left, right ast.NodeID) ([]TypeID, error) {
 		return nil, err
 	}
 
-	if !n.c.a.literalCompat(n.base, lit) {
+	if !n.c.a.atomCompat(n.base, lit) {
 		return nil, n.c.errorf(
 			id,
-			"literal is not compatible with %s",
+			"literal %s is not compatible with %s",
+			n.c.a.Node(lit).Kind(),
 			n.c.a.Node(n.base).Kind(),
 		)
 	}
@@ -335,7 +347,7 @@ func (n *normalizer) inValues(left, right ast.NodeID) ([]TypeID, error) {
 			return nil, err
 		}
 
-		if !n.c.a.literalCompat(n.base, id) {
+		if !n.c.a.atomCompat(n.base, id) {
 			return nil, n.c.errorf(
 				v,
 				"enum literal is not compatible with %s",
@@ -362,11 +374,21 @@ func (n *normalizer) inSet(left, right ast.NodeID) error {
 func (n *normalizer) literal(id ast.NodeID) (TypeID, error) {
 	id = n.ungroup(id)
 	switch n.c.t.Node(id).Kind() {
-	case ast.Null, ast.Bool, ast.Int, ast.Decimal, ast.String:
-		t, optional, err := n.c.value(id, false)
-		if optional {
-			return 0, n.c.errorf(id, "optional literal is invalid in a constraint")
+	case ast.Null, ast.Bool, ast.Int, ast.String:
+		t, err := n.c.scalarLiteralAtom(id)
+		if err != nil {
+			return 0, err
 		}
+		if n.c.a.baseKind(n.base) == Float {
+			floatAtom, ok := n.c.a.floatAtom(t)
+			if !ok {
+				return 0, n.c.errorf(id, "literal cannot be represented as a float")
+			}
+			t = floatAtom
+		}
+		return t, nil
+	case ast.Decimal:
+		t, err := n.c.scalarLiteralAtom(id)
 		return t, err
 	default:
 		return 0, n.c.errorf(id, "constraint requires a scalar literal")
@@ -396,7 +418,7 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 		if litKind != ast.Int {
 			return n.c.errorf(literal, "int constraint requires an integer bound")
 		}
-		v, err := n.c.intLiteral(literal, n.c.t.Int(literal))
+		v, err := n.c.intAtom(literal, n.c.t.Int(literal))
 		if err != nil {
 			return err
 		}
@@ -412,6 +434,26 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 			return n.c.errorf(literal, "invalid numeric bound %q", raw)
 		}
 		n.applyFloat(op, canonicalFloat(v))
+		return nil
+	case Real:
+		var v TypeID
+		switch litKind {
+		case ast.Int:
+			intAtom, err := n.c.intAtom(literal, n.c.t.Int(literal))
+			if err != nil {
+				return err
+			}
+			v = n.c.a.realFromIntAtom(intAtom)
+		case ast.Decimal:
+			var err error
+			v, err = n.c.realAtom(literal, n.c.t.Decimal(literal))
+			if err != nil {
+				return err
+			}
+		default:
+			return n.c.errorf(literal, "real constraint requires a numeric bound")
+		}
+		n.applyReal(op, v)
 		return nil
 	default:
 		return n.c.errorf(literal, "numeric comparison is invalid for %s", kind)
@@ -445,24 +487,62 @@ func (n *normalizer) applyInt(op token.Kind, v TypeID) {
 	// and then internally they are all inclusive bounds.
 	switch op {
 	case token.Gt:
-		v = n.c.a.nextIntLiteral(v)
+		v = n.c.a.nextIntAtom(v)
 		op = token.Ge
 	case token.Lt:
-		v = n.c.a.prevIntLiteral(v)
+		v = n.c.a.prevIntAtom(v)
 		op = token.Le
 	}
 
 	r := &n.n.ints
 	switch op {
 	case token.Ge:
-		if r.flags&hasMin == 0 || n.c.a.compareLiteral(v, r.min) > 0 {
+		if r.flags&hasMin == 0 || n.c.a.compareAtom(v, r.min) > 0 {
 			r.min = v
 			r.flags |= hasMin
 		}
 	case token.Le:
-		if r.flags&hasMax == 0 || n.c.a.compareLiteral(v, r.max) < 0 {
+		if r.flags&hasMax == 0 || n.c.a.compareAtom(v, r.max) < 0 {
 			r.max = v
 			r.flags |= hasMax
+		}
+	}
+}
+
+func (n *normalizer) applyReal(op token.Kind, v TypeID) {
+	r := &n.n.reals
+	switch op {
+	default:
+		panic(op)
+	case token.Gt, token.Ge:
+		inclusive := op == token.Ge
+		cmp := 1
+		if r.flags&hasMin != 0 {
+			cmp = n.c.a.compareAtom(v, r.min)
+		}
+		if r.flags&hasMin == 0 || cmp > 0 || cmp == 0 && !inclusive && r.flags&minInclusive != 0 {
+			r.min = v
+			r.flags |= hasMin
+			if inclusive {
+				r.flags |= minInclusive
+			} else {
+				r.flags &^= minInclusive
+			}
+		}
+	case token.Lt, token.Le:
+		inclusive := op == token.Le
+		cmp := -1
+		if r.flags&hasMax != 0 {
+			cmp = n.c.a.compareAtom(v, r.max)
+		}
+		if r.flags&hasMax == 0 || cmp < 0 || cmp == 0 && !inclusive && r.flags&maxInclusive != 0 {
+			r.max = v
+			r.flags |= hasMax
+			if inclusive {
+				r.flags |= maxInclusive
+			} else {
+				r.flags &^= maxInclusive
+			}
 		}
 	}
 }
@@ -536,6 +616,13 @@ func (n *normalizer) applyLen(op token.Kind, v int64) {
 }
 
 func (n *normalizer) addEnum(v []TypeID) {
+	if n.c.a.baseKind(n.base) == Real {
+		for i, id := range v {
+			if n.c.a.Node(id).kind == IntAtom {
+				v[i] = n.c.a.realFromIntAtom(id)
+			}
+		}
+	}
 	v = n.c.a.sortUniqueTypes(v)
 	if n.n.enum == nil {
 		n.n.enum = v
@@ -545,7 +632,7 @@ func (n *normalizer) addEnum(v []TypeID) {
 	i, j := 0, 0
 	for i < len(n.n.enum) && j < len(v) {
 		a, b := n.n.enum[i], v[j]
-		cmp := n.c.a.compareLiteral(a, b)
+		cmp := n.c.a.compareAtom(a, b)
 		switch {
 		case cmp < 0:
 			i++
@@ -560,12 +647,12 @@ func (n *normalizer) addEnum(v []TypeID) {
 	n.n.enum = out
 }
 
-func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
+func (n *normalizer) finish() (ct normConstraint, impossible bool, err error) {
 	if n.impossible {
-		return 0, true, nil
+		return normConstraint{}, true, nil
 	}
-	if n.c.a.impossibleIntBounds(n.n.ints) || impossibleFloatBounds(n.n.floats) || impossibleLenBounds(n.n.length) {
-		return 0, true, nil
+	if n.c.a.impossibleIntBounds(n.n.ints) || n.c.a.impossibleRealBounds(n.n.reals) || impossibleFloatBounds(n.n.floats) || impossibleLenBounds(n.n.length) {
+		return normConstraint{}, true, nil
 	}
 
 	kind := n.c.a.baseKind(n.base)
@@ -575,6 +662,11 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 			if n.c.a.singleInt(n.n.ints) {
 				n.n.enum = []TypeID{n.n.ints.min}
 				n.n.ints = intBounds{}
+			}
+		case Real:
+			if n.c.a.singleReal(n.n.reals) {
+				n.n.enum = []TypeID{n.n.reals.min}
+				n.n.reals = realBounds{}
 			}
 		case Float:
 			// TODO(i4k): binary equality of floats for now...
@@ -588,32 +680,41 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 	if n.n.enum != nil {
 		out := n.n.enum[:0]
 		for _, id := range n.n.enum {
-			if n.c.a.literalSatisfiesNormConstraint(id, n.n) {
+			if n.c.a.atomSatisfiesNormConstraint(id, n.n) {
 				out = append(out, id)
 			}
 		}
 		n.n.enum = out
 		if len(out) == 0 {
-			return 0, true, nil
+			return normConstraint{}, true, nil
 		}
 		// NOTE(i4k): Once schema has enums the other restrictions are redundant.
 		// We can check for clauses conflicting with the enums later and fail in such cases.
 		n.n.ints = intBounds{}
+		n.n.reals = realBounds{}
+		n.n.format = noFmt
 		n.n.floats = floatBounds{}
 		n.n.length = lenBounds{}
 	}
-
-	if n.n.ints.flags == 0 && n.n.floats.flags == 0 && n.n.length.flags == 0 && n.n.enum == nil {
-		return 0, false, nil
-	}
-	return n.c.a.internConstraint(n.n), false, nil
+	return n.n, false, nil
 }
 
 func (a *Arena) impossibleIntBounds(r intBounds) bool {
 	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
 		return false
 	}
-	return a.compareLiteral(r.min, r.max) > 0
+	return a.compareAtom(r.min, r.max) > 0
+}
+
+func (a *Arena) impossibleRealBounds(r realBounds) bool {
+	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
+		return false
+	}
+	cmp := a.compareAtom(r.min, r.max)
+	if cmp > 0 {
+		return true
+	}
+	return cmp == 0 && (r.flags&minInclusive == 0 || r.flags&maxInclusive == 0)
 }
 
 func impossibleLenBounds(r lenBounds) bool {
@@ -637,6 +738,10 @@ func (a *Arena) singleInt(r intBounds) bool {
 	return r.flags&(hasMin|hasMax) == hasMin|hasMax && r.min == r.max
 }
 
+func (a *Arena) singleReal(r realBounds) bool {
+	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && a.compareAtom(r.min, r.max) == 0
+}
+
 func singleFloat(r floatBounds) bool {
 	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && r.min == r.max
 }
@@ -646,8 +751,16 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 	a.scratch = append(a.scratch, encodingVersion, 0xc1)
 	if n.ints.flags != 0 {
 		a.scratch = append(a.scratch, constraintInt, byte(n.ints.flags))
-		a.scratch = a.putIntLiteral(a.scratch, n.ints.min)
-		a.scratch = a.putIntLiteral(a.scratch, n.ints.max)
+		a.scratch = a.putIntAtom(a.scratch, n.ints.min)
+		a.scratch = a.putIntAtom(a.scratch, n.ints.max)
+	}
+	if n.reals.flags != 0 {
+		a.scratch = append(a.scratch, constraintReal, byte(n.reals.flags))
+		a.scratch = a.putRealAtom(a.scratch, n.reals.min)
+		a.scratch = a.putRealAtom(a.scratch, n.reals.max)
+	}
+	if n.format != noFmt {
+		a.scratch = append(a.scratch, constraintFloatConv, byte(n.format))
 	}
 	if n.floats.flags != 0 {
 		a.scratch = append(a.scratch, constraintFloat, byte(n.floats.flags))
@@ -674,7 +787,7 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 		}
 	}
 
-	d := constraintDataFromNorm(n)
+	d := initConstraintDataFromNorm(n)
 	if n.enum != nil {
 		d.flags |= constraintEnum
 		d.enum = range32{off: int32(len(a.constraintEnums)), len: int32(len(n.enum))}
@@ -695,7 +808,7 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 // solve this with Go struct equality.
 func (a *Arena) constraintEqual(id ConstraintID, n normConstraint) bool {
 	got := a.constraints[id]
-	want := constraintDataFromNorm(n)
+	want := initConstraintDataFromNorm(n)
 
 	enum := got.enum
 	got.enum = range32{}
@@ -715,7 +828,11 @@ func (a *Arena) constraintEqual(id ConstraintID, n normConstraint) bool {
 	return equalTypeIDs(old, n.enum)
 }
 
-func constraintDataFromNorm(n normConstraint) constraintData {
+func emptyConstraint(n normConstraint) bool {
+	return n.ints.flags == 0 && n.reals.flags == 0 && n.format == noFmt && n.floats.flags == 0 && n.length.flags == 0 && n.enum == nil
+}
+
+func initConstraintDataFromNorm(n normConstraint) constraintData {
 	var d constraintData
 
 	if n.ints.flags != 0 {
@@ -723,6 +840,18 @@ func constraintDataFromNorm(n normConstraint) constraintData {
 		d.intFlags = n.ints.flags
 		d.intMin = n.ints.min
 		d.intMax = n.ints.max
+	}
+
+	if n.reals.flags != 0 {
+		d.flags |= constraintReal
+		d.realFlags = n.reals.flags
+		d.realMin = n.reals.min
+		d.realMax = n.reals.max
+	}
+
+	if n.format != noFmt {
+		d.flags |= constraintFloatConv
+		d.format = n.format
 	}
 
 	if n.floats.flags != 0 {
@@ -758,21 +887,24 @@ func (a *Arena) constraintFingerprint(id ConstraintID) uint64 {
 }
 
 func (a *Arena) sortUniqueTypes(v []TypeID) []TypeID {
-	sort.Slice(v, func(i, j int) bool { return a.compareLiteral(v[i], v[j]) < 0 })
+	sort.Slice(v, func(i, j int) bool { return a.compareAtom(v[i], v[j]) < 0 })
 	out := v[:0]
 	for _, id := range v {
-		if len(out) == 0 || out[len(out)-1] != id {
+		if len(out) == 0 || a.compareAtom(out[len(out)-1], id) != 0 {
 			out = append(out, id)
 		}
 	}
 	return out
 }
 
-// compareLiteral gives finite literal sets an order independent of arena IDs and fingerprints.
+// compareAtom gives finite atom sets an order independent of arena IDs and fingerprints.
 // This is used as sorting Less function (see [sort.Interface]) but also when shifting sorted
 // values.
-func (a *Arena) compareLiteral(x, y TypeID) int {
+func (a *Arena) compareAtom(x, y TypeID) int {
 	xn, yn := a.Node(x), a.Node(y)
+	if (xn.kind == IntAtom || xn.kind == RealAtom) && (yn.kind == IntAtom || yn.kind == RealAtom) {
+		return a.compareRealNumbers(x, y)
+	}
 	if xn.kind < yn.kind {
 		return -1
 	}
@@ -782,16 +914,16 @@ func (a *Arena) compareLiteral(x, y TypeID) int {
 	switch xn.kind {
 	case Null:
 		return 0
-	case BoolLit:
+	case BoolAtom:
 		if xn.data < yn.data {
 			return -1
 		}
 		if xn.data > yn.data {
 			return 1
 		}
-	case IntLit:
+	case IntAtom:
 		return a.compareInts(xn.data, yn.data)
-	case FloatLit:
+	case FloatAtom:
 		xv, yv := a.floats[xn.data], a.floats[yn.data]
 		if xv < yv {
 			return -1
@@ -799,7 +931,7 @@ func (a *Arena) compareLiteral(x, y TypeID) int {
 		if xv > yv {
 			return 1
 		}
-	case StringLit:
+	case StringAtom:
 		xv, yv := a.StringValue(StringID(xn.data)), a.StringValue(StringID(yn.data))
 		if xv < yv {
 			return -1
@@ -820,9 +952,9 @@ func (a *Arena) baseKind(id TypeID) Kind {
 	return a.Node(id).kind
 }
 
-func (a *Arena) literalCompat(base, lit TypeID) bool {
+func (a *Arena) atomCompat(base, atom TypeID) bool {
 	bk := a.baseKind(base)
-	ln := a.Node(lit)
+	ln := a.Node(atom)
 	lk := ln.kind
 	switch bk {
 	case Any:
@@ -830,9 +962,11 @@ func (a *Arena) literalCompat(base, lit TypeID) bool {
 	case Null:
 		return lk == Null
 	case Bool:
-		return lk == BoolLit
+		return lk == BoolAtom
 	case Int:
-		return lk == IntLit
+		return lk == IntAtom
+	case Real:
+		return lk == IntAtom || lk == RealAtom
 	case Float:
 		// TODO(i4k): not sure if we should allow int here but allowing makes it easier to use...
 		// for context, this is used in several cases.
@@ -840,27 +974,47 @@ func (a *Arena) literalCompat(base, lit TypeID) bool {
 		//      maybe we should require (float, x == 3.0) to be explicit.
 		// ex2: (float, x IN [1, 2])
 		//      maybe we should require (float, x IN [1.0, 2.0])
-		return lk == FloatLit || (lk == IntLit && a.isIntSmall(ln.data))
+		return lk == FloatAtom || lk == RealAtom || (lk == IntAtom && a.isIntSmall(ln.data))
 	case String:
-		return lk == StringLit
+		return lk == StringAtom
 	}
 	return false
 }
 
-func (a *Arena) literalSatisfiesNormConstraint(id TypeID, n normConstraint) bool {
+func (a *Arena) atomSatisfiesNormConstraint(id TypeID, n normConstraint) bool {
 	node := a.Node(id)
 	if n.ints.flags != 0 {
-		if node.kind != IntLit || !a.checkIntLiteralBounds(id, n.ints) {
+		if node.kind != IntAtom || !a.checkIntAtomBounds(id, n.ints) {
+			return false
+		}
+	}
+	if n.reals.flags != 0 {
+		if (node.kind != IntAtom && node.kind != RealAtom) || !a.checkRealAtomBounds(id, n.reals) {
+			return false
+		}
+	}
+	if n.format != noFmt {
+		if (node.kind != IntAtom && node.kind != RealAtom) || !a.realCanBeFloat(id, n.format) {
 			return false
 		}
 	}
 	if n.floats.flags != 0 {
 		var v float64
 		switch node.kind {
-		case IntLit:
-			v = float64(a.int64(node.data))
-		case FloatLit:
+		case IntAtom:
+			var ok bool
+			v, ok = a.realToFloat64(id)
+			if !ok {
+				return false
+			}
+		case FloatAtom:
 			v = a.floats[node.data]
+		case RealAtom:
+			var ok bool
+			v, ok = a.realToFloat64(id)
+			if !ok {
+				return false
+			}
 		default:
 			return false
 		}
@@ -869,7 +1023,7 @@ func (a *Arena) literalSatisfiesNormConstraint(id TypeID, n normConstraint) bool
 		}
 	}
 	if n.length.flags != 0 {
-		if node.kind != StringLit {
+		if node.kind != StringAtom {
 			return false
 		}
 		l := int64(utf8.RuneCountInString(a.StringValue(StringID(node.data))))
@@ -889,9 +1043,24 @@ func (a *Arena) intConstraintNorm(id ConstraintID) normConstraint {
 	return n
 }
 
-func (a *Arena) checkIntLiteralBounds(id TypeID, r intBounds) bool {
+func (a *Arena) realConstraintNorm(id ConstraintID) normConstraint {
+	d := a.constraints[id]
+	n := normConstraint{}
+	if d.flags&constraintReal != 0 {
+		n.reals = realBounds{flags: d.realFlags, min: d.realMin, max: d.realMax}
+	}
+	if d.flags&constraintFloatConv != 0 {
+		n.format = d.format
+	}
+	if d.enum.len > 0 {
+		n.enum = a.constraintEnums[d.enum.off : d.enum.off+d.enum.len]
+	}
+	return n
+}
+
+func (a *Arena) checkIntAtomBounds(id TypeID, r intBounds) bool {
 	n := a.Node(id)
-	if n.kind != IntLit {
+	if n.kind != IntAtom {
 		return false
 	}
 	if r.flags&hasMin != 0 && a.compareInts(n.data, a.Node(r.min).data) < 0 {
@@ -899,6 +1068,25 @@ func (a *Arena) checkIntLiteralBounds(id TypeID, r intBounds) bool {
 	}
 	if r.flags&hasMax != 0 && a.compareInts(n.data, a.Node(r.max).data) > 0 {
 		return false
+	}
+	return true
+}
+
+func (a *Arena) checkRealAtomBounds(id TypeID, r realBounds) bool {
+	if a.Node(id).kind != IntAtom && a.Node(id).kind != RealAtom {
+		return false
+	}
+	if r.flags&hasMin != 0 {
+		cmp := a.compareAtom(id, r.min)
+		if cmp < 0 || cmp == 0 && r.flags&minInclusive == 0 {
+			return false
+		}
+	}
+	if r.flags&hasMax != 0 {
+		cmp := a.compareAtom(id, r.max)
+		if cmp > 0 || cmp == 0 && r.flags&maxInclusive == 0 {
+			return false
+		}
 	}
 	return true
 }

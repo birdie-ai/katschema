@@ -43,12 +43,12 @@ func putBigInt(p []byte, negative bool, mag []byte) []byte {
 	return append(p, mag...)
 }
 
-func (a *Arena) putIntLiteral(p []byte, id TypeID) []byte {
+func (a *Arena) putIntAtom(p []byte, id TypeID) []byte {
 	if id == 0 {
 		return put64(p, 0)
 	}
 	n := a.Node(id)
-	if n.kind != IntLit {
+	if n.kind != IntAtom {
 		panic(n.kind)
 	}
 	ikind := integerKind(n.data)
@@ -60,6 +60,26 @@ func (a *Arena) putIntLiteral(p []byte, id TypeID) []byte {
 	}
 	v, mag := a.bigIntData(n.data)
 	return putBigInt(p, v.negative(), mag)
+}
+
+func (a *Arena) putRealAtom(p []byte, id TypeID) []byte {
+	if id == 0 {
+		return append(p, 0)
+	}
+	n := a.Node(id)
+	if n.kind != RealAtom {
+		panic(n.kind)
+	}
+	v, digits := a.realData(n.data)
+	p = append(p, 1)
+	if v.negative() {
+		p = append(p, 1)
+	} else {
+		p = append(p, 0)
+	}
+	p = put64(p, v.exp)
+	p = put32(p, int32(len(digits)))
+	return append(p, digits...)
 }
 
 // this function is weird but it canonicalize as +0 in the case of -0.
