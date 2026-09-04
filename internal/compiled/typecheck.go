@@ -4,15 +4,6 @@ import "fmt"
 
 // TypeCheck checks value against schema and returns value interpreted in the
 // schema's type context.
-//
-// Both arguments are compiled semantic values. A scalar value is represented
-// as a singleton refinement whose base is taken from schema. Composite values
-// retain their shape while their nested scalar values are interpreted against
-// the corresponding schema members.
-//
-// TypeCheck does not perform conversion or rounding. The exact literal payload
-// is retained; the schema only supplies the type context and the precondition
-// that the value is accepted.
 func (a *Arena) TypeCheck(schema, value TypeID) (TypeID, error) {
 	if !a.Subtype(value, schema) {
 		return 0, fmt.Errorf("compiled: value %d is not a subtype of schema %d", value, schema)
@@ -32,7 +23,7 @@ func (a *Arena) typeCheck(schema, value TypeID) TypeID {
 				continue
 			}
 			if selected != 0 {
-				// There is no unique type context when multiple sum members
+				// NOTE(i4k): There is no unique type context when multiple sum members
 				// accept the same value. Keep the source interpretation.
 				return value
 			}

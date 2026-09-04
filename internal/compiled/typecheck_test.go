@@ -56,20 +56,34 @@ func TestTypeCheck(t *testing.T) {
 			schema: ks.Object(
 				ks.Field("temp", ks.Float32()),
 				ks.Field("name", ks.String()),
+				ks.Field("metadata", ks.Object(
+					ks.Field("a", ks.String()),
+				)),
 			),
 			value: ks.Object(
+				ks.Field("metadata", ks.Object(
+					ks.Field("a", ks.LitString("string")),
+				)),
 				ks.Field("temp", ks.LitDecimal("31.5")),
 				ks.Field("name", ks.LitString("weather")),
 			),
 			check: func(t *testing.T, a *Arena, got TypeID) {
 				fields := a.Type(got).Fields()
+				if fields.Len() != 3 {
+					t.Fatalf("unexpected length: %d, expected 3", fields.Len())
+				}
 				temp := fields.MustGet("temp")
 				name := fields.MustGet("name")
+				meta := fields.MustGet("metadata")
 				if tempBase := a.Type(temp.Type()).Base(); tempBase != a.Float32() {
 					t.Fatalf("temp base = %d, want float32 %d", tempBase, a.Float32())
 				}
 				if nameType := a.Type(name.Type()).Base(); nameType != a.String() {
 					t.Fatalf("name is not a string: %d", nameType)
+				}
+				metaFields := a.Type(meta.Type()).Fields()
+				if metaFields.Len() != 1 {
+					t.Fatalf("unexpected metadata fields length")
 				}
 			},
 		},
