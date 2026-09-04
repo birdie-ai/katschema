@@ -273,28 +273,20 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	if optional && !field {
 		return 0, false, c.error(id, ErrOptionalUnexpected)
 	}
-	normConstraint, impossible, err := c.extendNormalizeConstraints(base, initial, s.Clauses)
+	constraint, impossible, err := c.extendNormalizeConstraints(base, initial, s.Clauses)
 	if err != nil {
 		return 0, false, err
 	}
 	if impossible {
 		return c.a.Never(), optional, nil
 	}
-	if emptyConstraint(normConstraint) {
-		return base, optional, nil
-	}
-	constraint := c.a.internConstraint(normConstraint)
 	return c.a.internRefined(base, constraint), optional, nil
 }
 
 func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 	switch c.t.Node(id).Kind() {
 	case ast.Name:
-		name := c.t.Name(id)
-		if typ, ok := c.a.floatBuiltinType(name); ok {
-			return typ, nil
-		}
-		switch name {
+		switch c.t.Name(id) {
 		case "any":
 			return c.a.Any(), nil
 		case "never":
@@ -307,8 +299,6 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 			return c.a.Int(), nil
 		case "real":
 			return c.a.Real(), nil
-		case "float":
-			return c.a.Float(), nil
 		case "string":
 			return c.a.String(), nil
 		case "int8":
@@ -327,6 +317,10 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 			return c.a.Uint32(), nil
 		case "uint64":
 			return c.a.Uint64(), nil
+		case "float32":
+			return c.a.Float32(), nil
+		case "float64", "float":
+			return c.a.Float64(), nil
 		default:
 			return 0, c.errorf(id, "unresolved type %q", c.t.Name(id))
 		}

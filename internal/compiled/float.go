@@ -23,17 +23,6 @@ func (a *Arena) internFloatFormat(format floatFmt) TypeID {
 	return a.internRefined(a.real, a.internConstraint(normConstraint{format: format}))
 }
 
-func (a *Arena) floatBuiltinType(name string) (TypeID, bool) {
-	switch name {
-	case "float32":
-		return a.f32, true
-	case "float64", "float":
-		return a.f64, true
-	default:
-		return 0, false
-	}
-}
-
 func (a *Arena) realCanBeFloat(id TypeID, format floatFmt) bool {
 	v, ok := a.realNumber(id)
 	return ok && decimalCanBeFloat(v, format)

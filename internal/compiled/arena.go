@@ -150,7 +150,6 @@ func (a *Arena) Uint8() TypeID   { return a.u8 }
 func (a *Arena) Uint16() TypeID  { return a.u16 }
 func (a *Arena) Uint32() TypeID  { return a.u32 }
 func (a *Arena) Uint64() TypeID  { return a.u64 }
-func (a *Arena) Float() TypeID   { return a.f64 }
 func (a *Arena) Float32() TypeID { return a.f32 }
 func (a *Arena) Float64() TypeID { return a.f64 }
 func (a *Arena) Real() TypeID    { return a.real }

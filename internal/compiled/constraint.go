@@ -97,7 +97,7 @@ const (
 	constraintFloatConv
 )
 
-func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstraint, clauses []ast.NodeID) (ct normConstraint, impossible bool, err error) {
+func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstraint, clauses []ast.NodeID) (ct ConstraintID, impossible bool, err error) {
 	n := normalizer{c: c, base: base, n: initial}
 	for _, id := range clauses {
 		if c.t.Node(id).Kind() != ast.Constraint {
@@ -105,7 +105,7 @@ func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstrain
 		}
 		err := n.consume(c.t.Constraint(id))
 		if err != nil {
-			return normConstraint{}, false, err
+			return 0, false, err
 		}
 	}
 	return n.finish()
@@ -593,12 +593,12 @@ func (n *normalizer) addEnum(v []TypeID) {
 	n.n.enum = out
 }
 
-func (n *normalizer) finish() (ct normConstraint, impossible bool, err error) {
+func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 	if n.impossible {
-		return normConstraint{}, true, nil
+		return 0, true, nil
 	}
 	if n.c.a.impossibleIntBounds(n.n.ints) || n.c.a.impossibleRealBounds(n.n.reals) || impossibleFloatBounds(n.n.floats) || impossibleLenBounds(n.n.length) {
-		return normConstraint{}, true, nil
+		return 0, true, nil
 	}
 
 	kind := n.c.a.baseKind(n.base)
@@ -626,7 +626,7 @@ func (n *normalizer) finish() (ct normConstraint, impossible bool, err error) {
 		}
 		n.n.enum = out
 		if len(out) == 0 {
-			return normConstraint{}, true, nil
+			return 0, true, nil
 		}
 		// NOTE(i4k): Once schema has enums the other restrictions are redundant.
 		// We can check for clauses conflicting with the enums later and fail in such cases.
@@ -636,7 +636,10 @@ func (n *normalizer) finish() (ct normConstraint, impossible bool, err error) {
 		n.n.floats = floatBounds{}
 		n.n.length = lenBounds{}
 	}
-	return n.n, false, nil
+	if emptyConstraint(n.n) {
+		return 0, false, nil
+	}
+	return n.c.a.internConstraint(n.n), false, nil
 }
 
 func (a *Arena) impossibleIntBounds(r intBounds) bool {
