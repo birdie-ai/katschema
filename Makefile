@@ -9,8 +9,9 @@ test:
 	go test -race -shuffle on ./...
 
 .PHONY: test/bench
+test/bench: pkg?=.
 test/bench:
-	go test -bench=.  -benchmem -memprofile memprofile.out -cpuprofile profile.out ./...
+	go test -bench=.  -benchmem -memprofile memprofile.out -cpuprofile profile.out $(pkg)
 
 .PHONY: check/grammar
 check/grammar:
