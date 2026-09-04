@@ -76,22 +76,24 @@ const (
 
 // Funcs below are common types.
 
-func Any() Value    { return Type("any") }
-func Never() Value  { return Type("never") }
-func Bool() Value   { return Type("bool") }
-func Int() Value    { return Type("int") }
-func Int8() Value   { return Type("int8") }
-func Int16() Value  { return Type("int16") }
-func Int32() Value  { return Type("int32") }
-func Int64() Value  { return Type("int64") }
-func Uint() Value   { return Type("uint") }
-func Uint8() Value  { return Type("uint8") }
-func Uint16() Value { return Type("uint16") }
-func Uint32() Value { return Type("uint32") }
-func Uint64() Value { return Type("uint64") }
-func Float() Value  { return Type("float") }
-func Real() Value   { return Type("real") }
-func String() Value { return Type("string") }
+func Any() Value     { return Type("any") }
+func Never() Value   { return Type("never") }
+func Bool() Value    { return Type("bool") }
+func Int() Value     { return Type("int") }
+func Int8() Value    { return Type("int8") }
+func Int16() Value   { return Type("int16") }
+func Int32() Value   { return Type("int32") }
+func Int64() Value   { return Type("int64") }
+func Uint() Value    { return Type("uint") }
+func Uint8() Value   { return Type("uint8") }
+func Uint16() Value  { return Type("uint16") }
+func Uint32() Value  { return Type("uint32") }
+func Uint64() Value  { return Type("uint64") }
+func Float() Value   { return Type("float") }
+func Float32() Value { return Type("float32") }
+func Float64() Value { return Type("float64") }
+func Real() Value    { return Type("real") }
+func String() Value  { return Type("string") }
 
 func X() Expr { return Ident("x") }
 
@@ -154,20 +156,9 @@ func LitBigInt(i *big.Int) Value {
 	return Value{kind: valueInt, text: i.Text(10)}
 }
 
-// LitFloat is a literal float.
-func LitFloat(f float64) Value {
-	return Value{kind: valueFloat, text: strconv.FormatFloat(f, 'f', -1, 64)}
-}
-
-// LitReal returns an exact decimal value. The raw value is parsed and
-// canonicalized when the value is compiled.
-func LitReal(raw string) Value {
-	return Value{kind: valueFloat, text: raw}
-}
-
-// LitDecimal is kept as a descriptive alias for LitReal.
+// LitDecimal returns an exact decimal value.
 func LitDecimal(raw string) Value {
-	return LitReal(raw)
+	return Value{kind: valueDecimal, text: raw}
 }
 
 func LitString(v string) Value {
@@ -264,14 +255,9 @@ func IntExpr(v int64) Expr {
 	return ValueExpr(LitInt(v))
 }
 
-// FloatExpr returns an float value as an expression.
-func FloatExpr(v float64) Expr {
-	return ValueExpr(LitFloat(v))
-}
-
-// RealExpr returns an exact decimal value as an expression.
-func RealExpr(raw string) Expr {
-	return ValueExpr(LitReal(raw))
+// DecimalExpr returns an exact decimal value as an expression.
+func DecimalExpr(raw string) Expr {
+	return ValueExpr(LitDecimal(raw))
 }
 
 // ListExpr returns a list as an expression.
@@ -307,7 +293,7 @@ const (
 	valueNull
 	valueBool
 	valueInt
-	valueFloat
+	valueDecimal
 	valueString
 	valueArray
 	valueObject
@@ -370,7 +356,7 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 		return t.AddBool(v.b, z), nil
 	case valueInt:
 		return t.AddInt(v.text, z), nil
-	case valueFloat:
+	case valueDecimal:
 		return t.AddDecimal(v.text, z), nil
 	case valueString:
 		return t.AddString(v.text, z), nil

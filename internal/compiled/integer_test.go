@@ -45,8 +45,9 @@ func TestCompileCanonicalizeInt(t *testing.T) {
 		t.Fatalf("canonical zero was not interned: %d != %d", zero, negzero)
 	}
 	for _, id := range []TypeID{x, y, z, zero, negzero} {
-		if got := a.Node(id).Kind(); got != IntLit {
-			t.Fatalf("kind %s is different than %s", got, IntLit)
+		atom, ok := a.Literal(id)
+		if !ok || a.Node(atom).Kind() != IntAtom {
+			t.Fatalf("compiled literal %d is not an integer literal", id)
 		}
 	}
 }
@@ -56,26 +57,47 @@ func TestIntegerLiteralFastPath(t *testing.T) {
 
 	// NOTE(i4k): here we test if small integer are interned as normal Go int64 integers.
 
+	{
+		a := NewArena()
+		before := len(a.ints)
+		id := compileRawInt(t, a, strconv.FormatInt(math.MaxInt64, 10))
+		after := len(a.ints)
+		if before != after {
+			// NOTE(i4k): this is an implementation detail. At the moment we are interning bounded
+			// integer types during arena initialization, so it means interning integer edge values
+			// is memoized.
+			t.Fatal("unexpected -- okay to remove this test if the arena interning logic changed")
+		}
+		_, ok := a.Literal(id)
+		if !ok {
+			t.Fatalf("compiled literal %d is not a literal", id)
+		}
+	}
+
 	for _, val := range []string{
-		strconv.FormatInt(math.MaxInt64, 10),
-		strconv.FormatInt(math.MinInt64, 10),
-		"+0",
-		"-0",
+		"10",
+		"67",
 		"+1337",
 		"-1337",
 	} {
 		a := NewArena()
 		id := compileRawInt(t, a, val)
-		if data := a.Node(id).data; data <= 0 {
+		atom, ok := a.Literal(id)
+		if !ok {
+			t.Fatalf("compiled literal %d is not a singleton", id)
+		}
+		if data := a.Node(atom).data; data <= 0 {
 			t.Fatalf("unexpected data %d, expected positive value", data)
 		}
-		if got := len(a.bigInts); got != 1 {
+		// NOTE(i4k): this test depends on the number of interned stuff in the arena.init()
+		// I just had to bump got=2 because we are interning "int64" max int, which is a bigint.
+		if got := len(a.bigInts); got != 2 {
 			t.Fatalf("unexpected bigInt interning: %d", got)
 		}
-		if got := len(a.bigIntBytes); got != 0 {
+		if got := len(a.bigIntBytes); got != 8 {
 			t.Fatalf("unexpected bigIntBytes usage: %d", got)
 		}
-		if got := len(a.ints); got != 2 {
+		if got := len(a.ints); got != 14 {
 			t.Fatalf("unexpected number of interned ints: %d", got)
 		}
 	}
@@ -89,10 +111,14 @@ func TestIntegerLiteralFastPath(t *testing.T) {
 		t.Run("bigInt/"+val, func(t *testing.T) {
 			a := NewArena()
 			id := compileRawInt(t, a, val)
-			if data := a.Node(id).data; data >= 0 {
+			atom, ok := a.Literal(id)
+			if !ok {
+				t.Fatalf("compiled literal %d is not a singleton", id)
+			}
+			if data := a.Node(atom).data; data >= 0 {
 				t.Fatalf("unexpected data %d, expected a negative value", data)
 			}
-			if got := len(a.bigInts); got != 2 {
+			if got := len(a.bigInts); got != 3 {
 				t.Fatalf("unexpected number of interned bigInts: %d, expected 2", got)
 			}
 			if got := len(a.bigIntBytes); got == 0 {
@@ -121,10 +147,18 @@ func TestBigIntCompareInts(t *testing.T) {
 	a := NewArena()
 	xx := compileRawInt(t, a, google)
 	zz := compileRawInt(t, a, z.String())
-	if got := a.compareInts(a.Node(xx).data, a.Node(zz).data); got != x.Cmp(&z) {
+	xxAtom, ok := a.Literal(xx)
+	if !ok {
+		t.Fatalf("compiled literal %d is not a singleton", xx)
+	}
+	zzAtom, ok := a.Literal(zz)
+	if !ok {
+		t.Fatalf("compiled literal %d is not a singleton", zz)
+	}
+	if got := a.compareInts(a.Node(xxAtom).data, a.Node(zzAtom).data); got != x.Cmp(&z) {
 		t.Fatalf("compareInts(x, z) != x.Cmp(z): %d != %d", got, x.Cmp(&z))
 	}
-	if got := a.compareInts(a.Node(zz).data, a.Node(xx).data); got != z.Cmp(&x) {
+	if got := a.compareInts(a.Node(zzAtom).data, a.Node(xxAtom).data); got != z.Cmp(&x) {
 		t.Fatalf("compareInts(z, x) != z.Cmp(x): %d != %d", got, z.Cmp(&x))
 	}
 }

@@ -36,7 +36,7 @@ func (v realValue) digitsLen() int32 {
 
 func (a *Arena) realData(data int32) (realValue, []byte) {
 	if data <= 0 || int(data) >= len(a.reals) {
-		panic("invalid real literal")
+		panic("invalid real atom")
 	}
 	v := a.reals[data]
 	n := v.digitsLen()
@@ -63,7 +63,7 @@ func (a *Arena) internRawReal(negative bool, digits []byte, exp int64) TypeID {
 	}
 
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(RealLit))
+	a.scratch = append(a.scratch, encodingVersion, byte(RealAtom))
 	if negative {
 		a.scratch = append(a.scratch, 1)
 	} else {
@@ -75,7 +75,7 @@ func (a *Arena) internRawReal(negative bool, digits []byte, exp int64) TypeID {
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		if n.kind != RealLit {
+		if n.kind != RealAtom {
 			return false
 		}
 		v, oldDigits := a.realData(n.data)
@@ -88,16 +88,16 @@ func (a *Arena) internRawReal(negative bool, digits []byte, exp int64) TypeID {
 	a.realBytes = append(a.realBytes, digits...)
 	i := int32(len(a.reals))
 	a.reals = append(a.reals, makeRealValue(off, digits, negative, exp))
-	return a.appendNode(Node{kind: RealLit, data: i}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: RealAtom, data: i}, fp, a.hashHead[fp])
 }
 
 func (a *Arena) realNumber(id TypeID) (decimalNumber, bool) {
 	n := a.Node(id)
 	switch n.kind {
-	case RealLit:
+	case RealAtom:
 		v, digits := a.realData(n.data)
 		return decimalNumber{negative: v.negative(), digits: digits, exp: v.exp}, true
-	case IntLit:
+	case IntAtom:
 		var raw string
 		if n.data > 0 {
 			raw = strconv.FormatInt(a.int64(n.data), 10)
@@ -169,10 +169,7 @@ func compareDecimalMagnitude(x, y decimalNumber) int {
 		return cmp
 	}
 
-	n := len(x.digits)
-	if len(y.digits) > n {
-		n = len(y.digits)
-	}
+	n := max(len(x.digits), len(y.digits))
 	for i := 0; i < n; i++ {
 		xd, yd := byte('0'), byte('0')
 		if i < len(x.digits) {
@@ -195,14 +192,14 @@ func (a *Arena) compareRealNumbers(x, y TypeID) int {
 	xv, xok := a.realNumber(x)
 	yv, yok := a.realNumber(y)
 	if !xok || !yok {
-		panic("non-real literal")
+		panic("non-real atom")
 	}
 	return compareDecimalNumbers(xv, yv)
 }
 
-func (a *Arena) realFromIntLiteral(id TypeID) TypeID {
+func (a *Arena) realFromIntAtom(id TypeID) TypeID {
 	v, ok := a.realNumber(id)
-	if !ok || a.Node(id).kind != IntLit {
+	if !ok || a.Node(id).kind != IntAtom {
 		panic("unexpected")
 	}
 	return a.internRawReal(v.negative, v.digits, v.exp)
@@ -211,8 +208,12 @@ func (a *Arena) realFromIntLiteral(id TypeID) TypeID {
 func (a *Arena) realString(id TypeID) string {
 	v, ok := a.realNumber(id)
 	if !ok {
-		panic("not a real literal")
+		panic("not a real atom")
 	}
+	return decimalNumberString(v)
+}
+
+func decimalNumberString(v decimalNumber) string {
 	if v.zero() {
 		return "0"
 	}
@@ -231,24 +232,4 @@ func (a *Arena) realString(id TypeID) string {
 func (a *Arena) realToFloat64(id TypeID) (float64, bool) {
 	v, err := strconv.ParseFloat(a.realString(id), 64)
 	return canonicalFloat(v), err == nil
-}
-
-func (a *Arena) floatLiteral(id TypeID) (TypeID, bool) {
-	switch a.Node(id).kind {
-	case FloatLit:
-		return id, true
-	case IntLit:
-		if !a.isIntSmall(a.Node(id).data) {
-			return 0, false
-		}
-		return a.internFloat(float64(a.int64(a.Node(id).data))), true
-	case RealLit:
-		v, ok := a.realToFloat64(id)
-		if !ok {
-			return 0, false
-		}
-		return a.internFloat(v), true
-	default:
-		return 0, false
-	}
 }

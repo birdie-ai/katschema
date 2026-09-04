@@ -11,11 +11,16 @@ import (
 func TestRealLiteralInterningIsExact(t *testing.T) {
 	t.Parallel()
 
-	var z token.Span
+	var s token.Span
 	tree := ast.New()
 	a := NewArena()
-	x := tree.AddDecimal("1.0100", z)
-	y := tree.AddDecimal("1.01e0", z)
+
+	// NOTE(i4k): we are interning literal decimal "1.0100" to (real, x == "1.0100")
+	x := tree.AddDecimal("1.0100", s)
+	y := tree.AddDecimal("1.01e0", s)
+	z := tree.AddSchema(tree.AddName("real", s), []ast.NodeID{
+		tree.AddConstraint(tree.AddBinary(tree.AddIdent("x", s), token.Eq, tree.AddDecimal("1.0100", s), s), s),
+	}, s)
 
 	xid, err := Compile(a, tree, x)
 	if err != nil {
@@ -25,21 +30,43 @@ func TestRealLiteralInterningIsExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	zid, err := Compile(a, tree, z)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if xid != yid {
 		t.Fatalf("exactly equal real literals have different IDs: %d != %d", xid, yid)
 	}
-	if got := a.Node(xid).Kind(); got != RealLit {
-		t.Fatalf("literal kind = %s, want %s", got, RealLit)
+	if zid != xid {
+		t.Fatalf("exactly equal real literals have different IDs: %d != %d", xid, zid)
+	}
+	if got := a.Node(xid).Kind(); got != Refined {
+		t.Fatalf("literal kind = %s, want %s", got, Refined)
 	}
 }
 
-func TestFloatConstraintsStillUseBinary64Literals(t *testing.T) {
+func TestFloatAliasesAndSubtyping(t *testing.T) {
 	t.Parallel()
 
 	a := NewArena()
-	typ := compile(t, a, ks.Where(ks.Float(), ks.Binary(ks.X(), ks.Eq, ks.FloatExpr(0.1))))
-	tree, value := build(t, ks.LitReal("0.10000000000000001"))
-	if !a.Valid(typ, tree, value) {
-		t.Fatal("legacy float equality should use the binary64 value")
+	f32Type := compile(t, a, ks.Float32())
+	f64Type := compile(t, a, ks.Float64())
+	floatAlias := compile(t, a, ks.Float())
+	realType := compile(t, a, ks.Real())
+
+	if floatAlias != f64Type {
+		t.Fatalf("float alias = %d, want float64 %d", floatAlias, f64Type)
+	}
+	if !a.Subtype(f32Type, f64Type) {
+		t.Fatal("float32 should be a subtype of float64")
+	}
+	if !a.Subtype(f64Type, realType) {
+		t.Fatal("float64 should be a subtype of real")
+	}
+	if a.Subtype(f64Type, f32Type) {
+		t.Fatal("float64 should not be a subtype of float32")
+	}
+	if got := a.internSum([2]TypeID{f32Type, f64Type}); got != f64Type {
+		t.Fatalf("float32 | float64 = %d, want float64 %d", got, f64Type)
 	}
 }

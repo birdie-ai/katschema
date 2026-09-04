@@ -1,4 +1,4 @@
-package parser_test
+package decimal_test
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/birdie-ai/katschema/parser"
+	"github.com/birdie-ai/katschema/math/decimal"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -16,248 +16,248 @@ func TestParseDecimal(t *testing.T) {
 	type testcase struct {
 		name string
 		text string
-		want parser.DecimalParts
+		want decimal.Number
 		err  error
 	}
 	for _, tc := range []testcase{
 		{
 			name: "empty input",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			text: "+",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			text: "-",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			text: ".1",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			text: "1.",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			text: "1..1",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			name: "leading zero in significand is malformed",
 			text: "01",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			name: "leading zero in decimal is malformed",
 			text: "00.1",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			name: "malformed exponent",
 			text: "1e",
-			err:  parser.ErrParseDecimalExpMissing,
+			err:  decimal.ErrParseDecimalExpMissing,
 		},
 		{
 			text: "1e+",
-			err:  parser.ErrParseDecimalExpMissing,
+			err:  decimal.ErrParseDecimalExpMissing,
 		},
 		{
 			text: "1e-",
-			err:  parser.ErrParseDecimalExpMissing,
+			err:  decimal.ErrParseDecimalExpMissing,
 		},
 		{
 			text: "1.0e",
-			err:  parser.ErrParseDecimalExpMissing,
+			err:  decimal.ErrParseDecimalExpMissing,
 		},
 		{
 			text: "1x",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			text: "1.2x",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			text: "1e1x",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			name: "exponent overflows",
 			text: "1e9223372036854775808",
-			err:  parser.ErrParseDecimalExpOverflow,
+			err:  decimal.ErrParseDecimalExpOverflow,
 		},
 		{
 			name: "exponent + adjust overflows",
 			text: "0.1e9223372036854775809",
-			err:  parser.ErrParseDecimalExpOverflow,
+			err:  decimal.ErrParseDecimalExpOverflow,
 		},
 		{
 			text: "1e-9223372036854775809",
-			err:  parser.ErrParseDecimalExpOverflow,
+			err:  decimal.ErrParseDecimalExpOverflow,
 		},
 		{
 			name: "canonical exponent is not representable in int64",
 			text: "10e9223372036854775807",
-			err:  parser.ErrParseDecimalExpOverflow,
+			err:  decimal.ErrParseDecimalExpOverflow,
 		},
 		{
 			text: "1.01e-9223372036854775808",
-			err:  parser.ErrParseDecimalExpOverflow,
+			err:  decimal.ErrParseDecimalExpOverflow,
 		},
 		{
 			text: "1e-9223372036854775809",
-			err:  parser.ErrParseDecimalExpOverflow,
+			err:  decimal.ErrParseDecimalExpOverflow,
 		},
 		{
 			text: "0.1e-9223372036854775809",
-			err:  parser.ErrParseDecimalExpOverflow,
+			err:  decimal.ErrParseDecimalExpOverflow,
 		},
 		{
 			text: "+0",
-			err:  parser.ErrParseDecimal,
+			err:  decimal.ErrParseDecimal,
 		},
 		{
 			text: "0",
-			want: parser.DecimalParts{Digits: []byte("0")},
+			want: decimal.Number{Digits: []byte("0")},
 		},
 		{
 			text: "-0",
-			want: parser.DecimalParts{Digits: []byte("0")},
+			want: decimal.Number{Digits: []byte("0")},
 		},
 
 		{
 			text: "0.0",
-			want: parser.DecimalParts{Digits: []byte("0")},
+			want: decimal.Number{Digits: []byte("0")},
 		},
 		{
 			text: "-0.000",
-			want: parser.DecimalParts{Digits: []byte("0")},
+			want: decimal.Number{Digits: []byte("0")},
 		},
 		{
 			text: "0e100",
-			want: parser.DecimalParts{Digits: []byte("0")},
+			want: decimal.Number{Digits: []byte("0")},
 		},
 		{
 			text: "-0.000e-1000",
-			want: parser.DecimalParts{Digits: []byte("0")},
+			want: decimal.Number{Digits: []byte("0")},
 		},
 
 		{
 			text: "1",
-			want: parser.DecimalParts{Digits: []byte("1")},
+			want: decimal.Number{Digits: []byte("1")},
 		},
 		{
 			text: "-1",
-			want: parser.DecimalParts{Neg: true, Digits: []byte("1")},
+			want: decimal.Number{Neg: true, Digits: []byte("1")},
 		},
 		{
 			text: "1.0",
-			want: parser.DecimalParts{Digits: []byte("1")},
+			want: decimal.Number{Digits: []byte("1")},
 		},
 		{
 			text: "1.00",
-			want: parser.DecimalParts{Digits: []byte("1")},
+			want: decimal.Number{Digits: []byte("1")},
 		},
 		{
 			text: "1.0001",
-			want: parser.DecimalParts{Digits: []byte("10001"), Exp: -4},
+			want: decimal.Number{Digits: []byte("10001"), Exp: -4},
 		},
 		{
 			text: "0.0001",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: -4},
+			want: decimal.Number{Digits: []byte("1"), Exp: -4},
 		},
 		{
 			text: "0.0100",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: -2},
+			want: decimal.Number{Digits: []byte("1"), Exp: -2},
 		},
 		{
 			text: "10.10",
-			want: parser.DecimalParts{Digits: []byte("101"), Exp: -1},
+			want: decimal.Number{Digits: []byte("101"), Exp: -1},
 		},
 		{
 			text: "100.000",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: 2},
+			want: decimal.Number{Digits: []byte("1"), Exp: 2},
 		},
 		{
 			text: "123.456",
-			want: parser.DecimalParts{Digits: []byte("123456"), Exp: -3},
+			want: decimal.Number{Digits: []byte("123456"), Exp: -3},
 		},
 
 		{
 			text: "1e1",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: 1},
+			want: decimal.Number{Digits: []byte("1"), Exp: 1},
 		},
 		{
 			text: "1e+1",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: 1},
+			want: decimal.Number{Digits: []byte("1"), Exp: 1},
 		},
 		{
 			text: "1e-1",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: -1},
+			want: decimal.Number{Digits: []byte("1"), Exp: -1},
 		},
 		{
 			text: "1E10",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: 10},
+			want: decimal.Number{Digits: []byte("1"), Exp: 10},
 		},
 		{
 			text: "1e01",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: 1},
+			want: decimal.Number{Digits: []byte("1"), Exp: 1},
 		},
 		{
 			text: "1e-001",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: -1},
+			want: decimal.Number{Digits: []byte("1"), Exp: -1},
 		},
 
 		{
 			text: "1.000e-1",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: -1},
+			want: decimal.Number{Digits: []byte("1"), Exp: -1},
 		},
 		{
 			text: "1.000e-1000",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: -1000},
+			want: decimal.Number{Digits: []byte("1"), Exp: -1000},
 		},
 		{
 			text: "1.0e1",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: 1},
+			want: decimal.Number{Digits: []byte("1"), Exp: 1},
 		},
 		{
 			text: "10.0e1",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: 2},
+			want: decimal.Number{Digits: []byte("1"), Exp: 2},
 		},
 		{
 			text: "10.10e2",
-			want: parser.DecimalParts{Digits: []byte("101"), Exp: 1},
+			want: decimal.Number{Digits: []byte("101"), Exp: 1},
 		},
 		{
 			text: "0.00100e5",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: 2},
+			want: decimal.Number{Digits: []byte("1"), Exp: 2},
 		},
 		{
 			text: "1000e-3",
-			want: parser.DecimalParts{Digits: []byte("1")},
+			want: decimal.Number{Digits: []byte("1")},
 		},
 		{
 			text: "1000.000e-1000",
-			want: parser.DecimalParts{Digits: []byte("1"), Exp: -997},
+			want: decimal.Number{Digits: []byte("1"), Exp: -997},
 		},
 
 		{
 			text: "9223372036854775807",
-			want: parser.DecimalParts{Digits: []byte("9223372036854775807")},
+			want: decimal.Number{Digits: []byte("9223372036854775807")},
 		},
 		{
 			text: "9223372036854775808",
-			want: parser.DecimalParts{Digits: []byte("9223372036854775808")},
+			want: decimal.Number{Digits: []byte("9223372036854775808")},
 		},
 		{
 			text: "18446744073709551615",
-			want: parser.DecimalParts{Digits: []byte("18446744073709551615")},
+			want: decimal.Number{Digits: []byte("18446744073709551615")},
 		},
 		{
 			text: "123456789012345678901234567890.12345678901234567890",
-			want: parser.DecimalParts{
+			want: decimal.Number{
 				Digits: []byte("1234567890123456789012345678901234567890123456789"),
 				Exp:    -19,
 			},
@@ -265,56 +265,56 @@ func TestParseDecimal(t *testing.T) {
 
 		{
 			text: "1e9223372036854775807",
-			want: parser.DecimalParts{
+			want: decimal.Number{
 				Digits: []byte("1"),
 				Exp:    math.MaxInt64,
 			},
 		},
 		{
 			text: "1e-9223372036854775808",
-			want: parser.DecimalParts{
+			want: decimal.Number{
 				Digits: []byte("1"),
 				Exp:    math.MinInt64,
 			},
 		},
 		{
 			text: "1.0e-9223372036854775808",
-			want: parser.DecimalParts{
+			want: decimal.Number{
 				Digits: []byte("1"),
 				Exp:    math.MinInt64,
 			},
 		},
 		{
 			text: "1e9223372036854775807",
-			want: parser.DecimalParts{
+			want: decimal.Number{
 				Digits: []byte("1"),
 				Exp:    9223372036854775807,
 			},
 		},
 		{
 			text: "0.1e9223372036854775808",
-			want: parser.DecimalParts{
+			want: decimal.Number{
 				Digits: []byte("1"),
 				Exp:    9223372036854775807,
 			},
 		},
 		{
 			text: "0.01e9223372036854775808",
-			want: parser.DecimalParts{
+			want: decimal.Number{
 				Digits: []byte("1"),
 				Exp:    9223372036854775806,
 			},
 		},
 		{
 			text: "0.010e9223372036854775808",
-			want: parser.DecimalParts{
+			want: decimal.Number{
 				Digits: []byte("1"),
 				Exp:    9223372036854775806,
 			},
 		},
 		{
 			text: "0.0101e9223372036854775808",
-			want: parser.DecimalParts{
+			want: decimal.Number{
 				Digits: []byte("101"),
 				Exp:    9223372036854775804,
 			},
@@ -325,7 +325,7 @@ func TestParseDecimal(t *testing.T) {
 			name = tc.text
 		}
 		t.Run(name, func(t *testing.T) {
-			got, err := parser.Decimal([]byte(tc.text), []byte(tc.text))
+			got, err := decimal.Parse([]byte(tc.text), []byte(tc.text))
 			if !errors.Is(err, tc.err) {
 				t.Fatalf("errors mismatch: got[%v] != want[%v]", err, tc.err)
 			}
@@ -339,7 +339,7 @@ func TestParseDecimal(t *testing.T) {
 	}
 }
 
-var benchmarkDecimal parser.DecimalParts
+var benchmarkDecimal decimal.Number
 
 func BenchmarkParseDecimal(b *testing.B) {
 	type testcase struct {
@@ -395,7 +395,7 @@ func BenchmarkParseDecimal(b *testing.B) {
 			for b.Loop() {
 				copy(buf, src)
 
-				v, err := parser.Decimal(buf, buf[:0])
+				v, err := decimal.Parse(buf, buf[:0])
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -413,7 +413,7 @@ func BenchmarkParseDecimalIntegerFastPath(b *testing.B) {
 	b.SetBytes(int64(len(raw)))
 	b.ResetTimer()
 	for b.Loop() {
-		v, err := parser.Decimal(raw, raw[:0])
+		v, err := decimal.Parse(raw, raw[:0])
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -439,7 +439,7 @@ func BenchmarkParseDecimalLong(b *testing.B) {
 			for b.Loop() {
 				copy(buf, src)
 
-				v, err := parser.Decimal(buf, buf[:0])
+				v, err := decimal.Parse(buf, buf[:0])
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -459,7 +459,7 @@ func BenchmarkParseDecimalTrailingZeros(b *testing.B) {
 	for b.Loop() {
 		copy(buf, src)
 
-		v, err := parser.Decimal(buf, buf[:0])
+		v, err := decimal.Parse(buf, buf[:0])
 		if err != nil {
 			b.Fatal(err)
 		}

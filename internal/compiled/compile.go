@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"strconv"
 
-	"github.com/birdie-ai/katschema/parser"
+	"github.com/birdie-ai/katschema/math/decimal"
 	"github.com/birdie-ai/katschema/parser/ast"
 	"github.com/birdie-ai/katschema/parser/token"
 )
@@ -59,18 +59,9 @@ func (c *compiler) error(id ast.NodeID, err error) error {
 func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 	n := c.t.Node(id)
 	switch n.Kind() {
-	case ast.Null:
-		return c.a.Null(), false, nil
-	case ast.Bool:
-		return c.a.internBool(c.t.Bool(id)), false, nil
-	case ast.Int:
-		t, err := c.intLiteral(id, c.t.Int(id))
+	case ast.Null, ast.Bool, ast.Int, ast.Decimal, ast.String:
+		t, err := c.scalarLiteral(id)
 		return t, false, err
-	case ast.Decimal:
-		t, err := c.realLiteral(id, c.t.Decimal(id))
-		return t, false, err
-	case ast.String:
-		return c.a.internStringLit(c.t.String(id)), false, nil
 	case ast.List:
 		t, err := c.list(id)
 		return t, false, err
@@ -87,7 +78,49 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 	}
 }
 
-func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
+func (c *compiler) scalarLiteral(id ast.NodeID) (TypeID, error) {
+	atom, err := c.scalarLiteralAtom(id)
+	if err != nil {
+		return 0, err
+	}
+
+	var base TypeID
+	switch c.t.Node(id).Kind() {
+	case ast.Null:
+		base = c.a.Null()
+	case ast.Bool:
+		base = c.a.Bool()
+	case ast.Int:
+		base = c.a.Int()
+	case ast.Decimal:
+		base = c.a.Real()
+	case ast.String:
+		base = c.a.String()
+	default:
+		panic("not a scalar literal")
+	}
+	return c.a.internLiteral(base, atom), nil
+}
+
+func (c *compiler) scalarLiteralAtom(id ast.NodeID) (TypeID, error) {
+	switch c.t.Node(id).Kind() {
+	case ast.Null:
+		// NOTE(i4k): Null is both the null type and its only literal value.
+		return c.a.Null(), nil
+	case ast.Bool:
+		return c.a.internBool(c.t.Bool(id)), nil
+	case ast.Int:
+		return c.intAtom(id, c.t.Int(id))
+	case ast.Decimal:
+		return c.realAtom(id, c.t.Decimal(id))
+	case ast.String:
+		return c.a.internStringAtom(c.t.String(id)), nil
+	default:
+		return 0, c.errorf(id, "%s is not a scalar literal", c.t.Node(id).Kind())
+	}
+}
+
+func (c *compiler) intAtom(id ast.NodeID, raw string) (TypeID, error) {
 	if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		return c.a.internInt(v), nil
 	}
@@ -99,9 +132,9 @@ func (c *compiler) intLiteral(id ast.NodeID, raw string) (TypeID, error) {
 	return c.a.internRawBigInt(v.Sign() < 0, v.Bytes()), nil
 }
 
-func (c *compiler) realLiteral(id ast.NodeID, raw string) (TypeID, error) {
+func (c *compiler) realAtom(id ast.NodeID, raw string) (TypeID, error) {
 	input := []byte(raw)
-	parts, err := parser.Decimal(input, input[:0])
+	parts, err := decimal.Parse(input, input[:0])
 	if err != nil {
 		return 0, c.errorf(id, "invalid number literal %q", raw)
 	}
@@ -221,13 +254,15 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	initial := normConstraint{}
 	if n := c.a.Node(base); n.kind == Refined {
 		r := c.a.refinements[n.data]
+		base = r.base
 		switch c.a.Node(r.base).kind {
 		case Int:
 			initial = c.a.intConstraintNorm(r.constraint)
-			base = r.base
 		case Real:
 			initial = c.a.realConstraintNorm(r.constraint)
-			base = r.base
+		default:
+			// TODO(i4k): finish this
+			panic("still unsupported refining refinements other than (int) and (real)")
 		}
 	}
 
@@ -251,11 +286,7 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 	switch c.t.Node(id).Kind() {
 	case ast.Name:
-		name := c.t.Name(id)
-		if typ, ok := c.a.intBuiltinType(name); ok {
-			return typ, nil
-		}
-		switch name {
+		switch c.t.Name(id) {
 		case "any":
 			return c.a.Any(), nil
 		case "never":
@@ -268,10 +299,28 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 			return c.a.Int(), nil
 		case "real":
 			return c.a.Real(), nil
-		case "float":
-			return c.a.Float(), nil
 		case "string":
 			return c.a.String(), nil
+		case "int8":
+			return c.a.Int8(), nil
+		case "int16":
+			return c.a.Int16(), nil
+		case "int32":
+			return c.a.Int32(), nil
+		case "int64":
+			return c.a.Int64(), nil
+		case "uint8":
+			return c.a.Uint8(), nil
+		case "uint16":
+			return c.a.Uint16(), nil
+		case "uint32":
+			return c.a.Uint32(), nil
+		case "uint64":
+			return c.a.Uint64(), nil
+		case "float32":
+			return c.a.Float32(), nil
+		case "float64", "float":
+			return c.a.Float64(), nil
 		default:
 			return 0, c.errorf(id, "unresolved type %q", c.t.Name(id))
 		}

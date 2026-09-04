@@ -14,13 +14,13 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 	// Subtype(a, a) 		 == true because a accepts all a values.
 	// Subtype((never), ...) == true because (never) accepts no value which b also accepts.
 	// Subtype(..., (any))   == true because b accepts everything.
-	if a == b || a == x.neverID || b == x.anyID {
+	if a == b || a == x.never || b == x.any {
 		return true
 	}
 
 	// Subtype((any), ...)   == false because otherwise the other type is (any) itself.
 	// Subtype(..., (never)) == false because never accepts no value, so accepts none of a values.
-	if a == 0 || b == 0 || a == x.anyID || b == x.neverID {
+	if a == 0 || b == 0 || a == x.any || b == x.never {
 		return false
 	}
 
@@ -32,34 +32,44 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 			if ar.base == br.base {
 				return x.constraintSubset(ar.constraint, br.constraint)
 			}
+			if atom, ok := x.Literal(a); ok {
+				return x.Subtype(atom, b)
+			}
 		}
 		return x.Subtype(ar.base, b)
 	}
 	if bn.kind == Refined {
 		br := x.refinements[bn.data]
-		return x.isLiteral(a) && x.Subtype(a, br.base) && x.literalSatisfiesConstraint(a, br.constraint)
+		_, isLiteral := x.Literal(a)
+		return isLiteral && x.Subtype(a, br.base) && x.atomSatisfiesConstraint(a, br.constraint)
+	}
+	if bn.kind == Sum {
+		for _, member := range x.sum(b) {
+			if x.Subtype(a, member) {
+				return true
+			}
+		}
+		return false
 	}
 
 	switch an.kind {
 	case Null:
 		return bn.kind == Null
-	case BoolLit:
+	case BoolAtom:
 		return bn.kind == Bool
 	case Int:
 		return bn.kind == Real
-	case IntLit:
+	case IntAtom:
 		switch bn.kind {
 		case Int, Real:
 			return true
-		case RealLit:
-			return x.compareLiteral(a, b) == 0
+		case RealAtom:
+			return x.compareAtom(a, b) == 0
 		}
 		return false
-	case FloatLit:
-		return bn.kind == Float
-	case RealLit:
+	case RealAtom:
 		return bn.kind == Real
-	case StringLit:
+	case StringAtom:
 		return bn.kind == String
 	case List:
 		return bn.kind == List && x.Subtype(TypeID(an.data), TypeID(bn.data))
@@ -138,15 +148,7 @@ func (x *Arena) findField(fields []Field, name string) int {
 	return -1
 }
 
-func (x *Arena) isLiteral(id TypeID) bool {
-	switch x.Node(id).kind {
-	case Null, BoolLit, IntLit, FloatLit, RealLit, StringLit:
-		return true
-	}
-	return false
-}
-
-func (x *Arena) literalSatisfiesConstraint(lit TypeID, id ConstraintID) bool {
+func (x *Arena) atomSatisfiesConstraint(atom TypeID, id ConstraintID) bool {
 	if id == 0 {
 		return true
 	}
@@ -158,18 +160,21 @@ func (x *Arena) literalSatisfiesConstraint(lit TypeID, id ConstraintID) bool {
 	if d.flags&constraintReal != 0 {
 		n.reals = realBounds{flags: d.realFlags, min: d.realMin, max: d.realMax}
 	}
+	if d.flags&constraintFloatConv != 0 {
+		n.format = d.format
+	}
 	if d.flags&constraintFloat != 0 {
 		n.floats = floatBounds{flags: d.floatFlags, min: d.numMin, max: d.numMax}
 	}
 	if d.flags&constraintLen != 0 {
 		n.length = lenBounds{flags: d.lenFlags, min: d.lenMin, max: d.lenMax}
 	}
-	if !x.literalSatisfiesNormConstraint(lit, n) {
+	if !x.atomSatisfiesNormConstraint(atom, n) {
 		return false
 	}
 	if d.flags&constraintEnum != 0 {
 		for _, v := range x.constraintEnums[d.enum.off : d.enum.off+d.enum.len] {
-			if x.compareLiteral(v, lit) == 0 {
+			if x.compareAtom(v, atom) == 0 {
 				return true
 			}
 		}
@@ -189,7 +194,7 @@ func (x *Arena) constraintSubset(a, b ConstraintID) bool {
 
 	if ad.flags&constraintEnum != 0 {
 		for _, lit := range x.constraintEnums[ad.enum.off : ad.enum.off+ad.enum.len] {
-			if !x.literalSatisfiesConstraint(lit, b) {
+			if !x.atomSatisfiesConstraint(lit, b) {
 				return false
 			}
 		}
@@ -209,6 +214,11 @@ func (x *Arena) constraintSubset(a, b ConstraintID) bool {
 			return false
 		}
 	}
+	if bd.flags&constraintFloatConv != 0 {
+		if ad.flags&constraintFloatConv == 0 || !floatFmtSubset(ad.format, bd.format) {
+			return false
+		}
+	}
 	if bd.flags&constraintFloat != 0 {
 		if ad.flags&constraintFloat == 0 || !numberBoundsSubset(ad, bd) {
 			return false
@@ -220,6 +230,16 @@ func (x *Arena) constraintSubset(a, b ConstraintID) bool {
 		}
 	}
 	return true
+}
+
+func floatFmtSubset(a, b floatFmt) bool {
+	if b == noFmt {
+		return true
+	}
+	if a == noFmt {
+		return false
+	}
+	return a == b || a == f32Fmt && b == f64Fmt
 }
 
 func (x *Arena) intBoundsSubset(a, b constraintData) bool {
@@ -239,7 +259,7 @@ func (x *Arena) lowerRealStronger(af boundFlags, av TypeID, bf boundFlags, bv Ty
 	if af&hasMin == 0 {
 		return false
 	}
-	cmp := x.compareLiteral(av, bv)
+	cmp := x.compareAtom(av, bv)
 	if cmp > 0 {
 		return true
 	}
@@ -253,7 +273,7 @@ func (x *Arena) upperRealStronger(af boundFlags, av TypeID, bf boundFlags, bv Ty
 	if af&hasMax == 0 {
 		return false
 	}
-	cmp := x.compareLiteral(av, bv)
+	cmp := x.compareAtom(av, bv)
 	if cmp < 0 {
 		return true
 	}
@@ -264,14 +284,14 @@ func (x *Arena) lowerIntStronger(af boundFlags, av TypeID, bf boundFlags, bv Typ
 	if bf&hasMin == 0 {
 		return true
 	}
-	return af&hasMin != 0 && x.compareLiteral(av, bv) >= 0
+	return af&hasMin != 0 && x.compareAtom(av, bv) >= 0
 }
 
 func (x *Arena) upperIntStronger(af boundFlags, av TypeID, bf boundFlags, bv TypeID) bool {
 	if bf&hasMax == 0 {
 		return true
 	}
-	return af&hasMax != 0 && x.compareLiteral(av, bv) <= 0
+	return af&hasMax != 0 && x.compareAtom(av, bv) <= 0
 }
 
 func numberBoundsSubset(a, b constraintData) bool {

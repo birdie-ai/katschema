@@ -43,12 +43,12 @@ func putBigInt(p []byte, negative bool, mag []byte) []byte {
 	return append(p, mag...)
 }
 
-func (a *Arena) putIntLiteral(p []byte, id TypeID) []byte {
+func (a *Arena) putIntAtom(p []byte, id TypeID) []byte {
 	if id == 0 {
 		return put64(p, 0)
 	}
 	n := a.Node(id)
-	if n.kind != IntLit {
+	if n.kind != IntAtom {
 		panic(n.kind)
 	}
 	ikind := integerKind(n.data)
@@ -62,12 +62,12 @@ func (a *Arena) putIntLiteral(p []byte, id TypeID) []byte {
 	return putBigInt(p, v.negative(), mag)
 }
 
-func (a *Arena) putRealLiteral(p []byte, id TypeID) []byte {
+func (a *Arena) putRealAtom(p []byte, id TypeID) []byte {
 	if id == 0 {
 		return append(p, 0)
 	}
 	n := a.Node(id)
-	if n.kind != RealLit {
+	if n.kind != RealAtom {
 		panic(n.kind)
 	}
 	v, digits := a.realData(n.data)
@@ -89,8 +89,4 @@ func canonicalFloat(v float64) float64 {
 		return 0
 	}
 	return v
-}
-
-func floatEqual(a, b float64) bool {
-	return math.Float64bits(canonicalFloat(a)) == math.Float64bits(canonicalFloat(b))
 }

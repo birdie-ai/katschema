@@ -52,10 +52,6 @@ func (v bigInt) magnitudeLen() int32 {
 	return v.size
 }
 
-func (a *Arena) isIntSmall(data int32) bool {
-	return data > 0
-}
-
 func (a *Arena) int64(data int32) int64 {
 	if data <= 0 {
 		panic("programming error")
@@ -151,20 +147,20 @@ func compareMagnitude(a, b []byte) int {
 	return bytes.Compare(a, b)
 }
 
-func (a *Arena) nextIntLiteral(id TypeID) TypeID {
-	return a.intLiteralAdd64(id, 1)
+func (a *Arena) nextIntAtom(id TypeID) TypeID {
+	return a.intAtomAdd64(id, 1)
 }
 
-func (a *Arena) prevIntLiteral(id TypeID) TypeID {
-	return a.intLiteralAdd64(id, -1)
+func (a *Arena) prevIntAtom(id TypeID) TypeID {
+	return a.intAtomAdd64(id, -1)
 }
 
-func (a *Arena) intLiteralAdd64(id TypeID, v int64) TypeID {
+func (a *Arena) intAtomAdd64(id TypeID, v int64) TypeID {
 	if v == 0 {
 		return id
 	}
 	n := a.Node(id)
-	if n.kind != IntLit {
+	if n.kind != IntAtom {
 		panic(n.kind.String())
 	}
 

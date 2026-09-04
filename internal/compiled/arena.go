@@ -1,8 +1,10 @@
 package compiled
 
 import (
+	"math"
 	"math/big"
 	"sort"
+	"strconv"
 )
 
 type hashFunc func([]byte) uint64
@@ -53,14 +55,25 @@ type Arena struct {
 	// minimum size when we need this. I hope I don't regret this comment!
 	scratch []byte
 
-	anyID    TypeID
-	neverID  TypeID
-	nullID   TypeID
-	boolID   TypeID
-	intID    TypeID
-	floatID  TypeID
-	realID   TypeID
-	stringID TypeID
+	// below are cached builtin type ids
+
+	any   TypeID
+	never TypeID
+	null  TypeID
+	bool  TypeID
+	int   TypeID // mathematical int
+	i8    TypeID
+	i16   TypeID
+	i32   TypeID
+	i64   TypeID
+	u8    TypeID
+	u16   TypeID
+	u32   TypeID
+	u64   TypeID
+	f32   TypeID
+	f64   TypeID
+	real  TypeID
+	str   TypeID
 }
 
 func NewArena() *Arena {
@@ -100,24 +113,47 @@ func (a *Arena) init() {
 	a.constraintNext = append(a.constraintNext, 0)
 	a.constraintHead = make(map[uint64]ConstraintID)
 
-	a.anyID = a.internSimple(Any)
-	a.neverID = a.internSimple(Never)
-	a.nullID = a.internSimple(Null)
-	a.boolID = a.internSimple(Bool)
-	a.intID = a.internSimple(Int)
-	a.floatID = a.internSimple(Float)
-	a.realID = a.internSimple(Real)
-	a.stringID = a.internSimple(String)
+	a.any = a.internSimple(Any)
+	a.never = a.internSimple(Never)
+	a.null = a.internSimple(Null)
+	a.bool = a.internSimple(Bool)
+	a.int = a.internSimple(Int)
+	a.real = a.internSimple(Real)
+	a.f32 = a.internFloatFormat(f32Fmt)
+	a.f64 = a.internFloatFormat(f64Fmt)
+	a.str = a.internSimple(String)
+
+	zero := a.internInt(0)
+	var maxU64 big.Int
+	maxU64.SetUint64(math.MaxUint64)
+
+	a.i8 = a.internBoundedInt(a.internInt(math.MinInt8), a.internInt(math.MaxInt8))
+	a.i16 = a.internBoundedInt(a.internInt(math.MinInt16), a.internInt(math.MaxInt16))
+	a.i32 = a.internBoundedInt(a.internInt(math.MinInt32), a.internInt(math.MaxInt32))
+	a.i64 = a.internBoundedInt(a.internInt(math.MinInt64), a.internInt(math.MaxInt64))
+	a.u8 = a.internBoundedInt(zero, a.internInt(math.MaxUint8))
+	a.u16 = a.internBoundedInt(zero, a.internInt(math.MaxUint16))
+	a.u32 = a.internBoundedInt(zero, a.internInt(math.MaxUint32))
+	a.u64 = a.internBoundedInt(zero, a.internBigInt(&maxU64))
 }
 
-func (a *Arena) Any() TypeID    { a.init(); return a.anyID }
-func (a *Arena) Never() TypeID  { a.init(); return a.neverID }
-func (a *Arena) Null() TypeID   { a.init(); return a.nullID }
-func (a *Arena) Bool() TypeID   { a.init(); return a.boolID }
-func (a *Arena) Int() TypeID    { a.init(); return a.intID }
-func (a *Arena) Float() TypeID  { a.init(); return a.floatID }
-func (a *Arena) Real() TypeID   { a.init(); return a.realID }
-func (a *Arena) String() TypeID { a.init(); return a.stringID }
+func (a *Arena) Any() TypeID     { return a.any }
+func (a *Arena) Never() TypeID   { return a.never }
+func (a *Arena) Null() TypeID    { return a.null }
+func (a *Arena) Bool() TypeID    { return a.bool }
+func (a *Arena) Int() TypeID     { return a.int }
+func (a *Arena) Int8() TypeID    { return a.i8 }
+func (a *Arena) Int16() TypeID   { return a.i16 }
+func (a *Arena) Int32() TypeID   { return a.i32 }
+func (a *Arena) Int64() TypeID   { return a.i64 }
+func (a *Arena) Uint8() TypeID   { return a.u8 }
+func (a *Arena) Uint16() TypeID  { return a.u16 }
+func (a *Arena) Uint32() TypeID  { return a.u32 }
+func (a *Arena) Uint64() TypeID  { return a.u64 }
+func (a *Arena) Float32() TypeID { return a.f32 }
+func (a *Arena) Float64() TypeID { return a.f64 }
+func (a *Arena) Real() TypeID    { return a.real }
+func (a *Arena) String() TypeID  { return a.str }
 
 func (a *Arena) Len() int { a.init(); return len(a.nodes) - 1 }
 
@@ -190,41 +226,46 @@ func (a *Arena) internBool(v bool) TypeID {
 		x = 1
 	}
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(BoolLit), byte(x))
+	a.scratch = append(a.scratch, encodingVersion, byte(BoolAtom), byte(x))
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == BoolLit && n.data == x
+		return n.kind == BoolAtom && n.data == x
 	}); id != 0 {
 		return id
 	}
-	return a.appendNode(Node{kind: BoolLit, data: x}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: BoolAtom, data: x}, fp, a.hashHead[fp])
 }
 
 func (a *Arena) internInt(v int64) TypeID {
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(IntLit))
+	a.scratch = append(a.scratch, encodingVersion, byte(IntAtom))
 	a.scratch = put64(a.scratch, v)
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == IntLit && n.data > 0 && a.ints[n.data] == v
+		return n.kind == IntAtom && n.data > 0 && a.ints[n.data] == v
 	}); id != 0 {
 		return id
 	}
 	i := int32(len(a.ints))
 	a.ints = append(a.ints, v)
-	return a.appendNode(Node{kind: IntLit, data: i}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: IntAtom, data: i}, fp, a.hashHead[fp])
+}
+
+func (a *Arena) internBoundedInt(min TypeID, max TypeID) TypeID {
+	n := normConstraint{ints: intBounds{flags: hasMin | hasMax, min: min, max: max}}
+	return a.internRefined(a.int, a.internConstraint(n))
 }
 
 func (a *Arena) internRawBigInt(negative bool, mag []byte) TypeID {
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(IntLit))
+	a.scratch = append(a.scratch, encodingVersion, byte(IntAtom))
 	a.scratch = putBigInt(a.scratch, negative, mag)
 	fp := a.hash(a.scratch)
 	id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == IntLit && n.data < 0 && a.equalBigInts(n.data, negative, mag)
+		return n.kind == IntAtom && n.data < 0 && a.equalBigInts(n.data, negative, mag)
 	})
 	if id != 0 {
 		return id
@@ -233,7 +274,7 @@ func (a *Arena) internRawBigInt(negative bool, mag []byte) TypeID {
 	off := int32(len(a.bigIntBytes))
 	a.bigIntBytes = append(a.bigIntBytes, mag...)
 	a.bigInts = append(a.bigInts, makeBigInt(off, mag, negative))
-	return a.appendNode(Node{kind: IntLit, data: -i}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: IntAtom, data: -i}, fp, a.hashHead[fp])
 }
 
 func (a *Arena) internBigInt(v *big.Int) TypeID {
@@ -243,36 +284,53 @@ func (a *Arena) internBigInt(v *big.Int) TypeID {
 	return a.internRawBigInt(v.Sign() < 0, v.Bytes())
 }
 
-func (a *Arena) internFloat(v float64) TypeID {
-	v = canonicalFloat(v)
-	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(FloatLit))
-	a.scratch = putf64(a.scratch, v)
-	fp := a.hash(a.scratch)
-	if id := a.find(fp, func(id TypeID) bool {
-		n := a.nodes[id]
-		return n.kind == FloatLit && floatEqual(a.floats[n.data], v)
-	}); id != 0 {
-		return id
-	}
-	i := int32(len(a.floats))
-	a.floats = append(a.floats, v)
-	return a.appendNode(Node{kind: FloatLit, data: i}, fp, a.hashHead[fp])
-}
-
-func (a *Arena) internStringLit(s string) TypeID {
+func (a *Arena) internStringAtom(s string) TypeID {
 	name := a.internString(s)
 	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(StringLit))
+	a.scratch = append(a.scratch, encodingVersion, byte(StringAtom))
 	a.scratch = putstr(a.scratch, s)
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
-		return n.kind == StringLit && StringID(n.data) == name
+		return n.kind == StringAtom && StringID(n.data) == name
 	}); id != 0 {
 		return id
 	}
-	return a.appendNode(Node{kind: StringLit, data: int32(name)}, fp, a.hashHead[fp])
+	return a.appendNode(Node{kind: StringAtom, data: int32(name)}, fp, a.hashHead[fp])
+}
+
+func (a *Arena) internLiteral(base, atom TypeID) TypeID {
+	constraint := a.internConstraint(normConstraint{enum: []TypeID{atom}})
+	return a.internRefined(base, constraint)
+}
+
+// Literal returns the scalar atom represented by id.
+// Atom nodes are kept as compact arena values, while compiled source literals
+// are represented by singleton refinements around those atoms.
+//
+// A refined type is a literal only when its constraint denotes exactly one
+// scalar value. In particular, this recognizes both compiler-emitted literals
+// and equivalent singleton schemas such as (int, x >= 10, x <= 10), while
+// rejecting non-singleton ranges and other refinements.
+func (a *Arena) Literal(id TypeID) (TypeID, bool) {
+	n := a.Node(id)
+	switch n.kind {
+	case Null, BoolAtom, IntAtom, RealAtom, StringAtom:
+		return id, true
+	case Refined:
+		r := a.refinements[n.data]
+		d := a.constraints[r.constraint]
+		if d.flags&constraintEnum == 0 || d.enum.len != 1 {
+			return 0, false
+		}
+		atom := a.constraintEnums[d.enum.off]
+		if _, ok := a.Literal(atom); !ok || !a.atomSatisfiesConstraint(atom, r.constraint) {
+			return 0, false
+		}
+		return atom, true
+	default:
+		return 0, false
+	}
 }
 
 func (a *Arena) internList(elem TypeID) TypeID {
@@ -374,18 +432,18 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 	// flat the binary tree and handle cases 2 and 3.
 	add = func(id TypeID) {
 		switch id {
-		case 0, a.neverID:
+		case 0, a.never:
 			return
-		case a.anyID:
+		case a.any:
 			flat = flat[:0]
-			flat = append(flat, a.anyID)
+			flat = append(flat, a.any)
 			return
 		}
 		n := a.Node(id)
 		if n.kind == Sum {
 			for _, member := range a.sum(id) {
 				add(member)
-				if len(flat) == 1 && flat[0] == a.anyID {
+				if len(flat) == 1 && flat[0] == a.any {
 					return
 				}
 			}
@@ -399,18 +457,18 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 
 	switch len(flat) {
 	case 0:
-		return a.neverID
+		return a.never
 	case 1:
 		return flat[0]
 	}
 
 	var hasTrue, hasFalse bool
 	for _, id := range flat {
-		n := a.Node(id)
-		if n.kind != BoolLit {
+		atom, ok := a.Literal(id)
+		if !ok || a.Node(atom).kind != BoolAtom {
 			continue
 		}
-		if n.data != 0 {
+		if a.Node(atom).data != 0 {
 			hasTrue = true
 		} else {
 			hasFalse = true
@@ -421,11 +479,13 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 	if hasTrue && hasFalse {
 		out := flat[:0] // reuse flat backing array.
 		for _, id := range flat {
-			if a.Node(id).kind != BoolLit {
-				out = append(out, id)
+			atom, ok := a.Literal(id)
+			if ok && a.Node(atom).kind == BoolAtom {
+				continue
 			}
+			out = append(out, id)
 		}
-		flat = append(out, a.boolID)
+		flat = append(out, a.bool)
 	}
 
 	sort.Slice(flat, func(i, j int) bool {
@@ -464,7 +524,7 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 	// handle cases 1 and 2 (after redundant removal)
 	switch len(flat) {
 	case 0:
-		return a.neverID
+		return a.never
 	case 1:
 		return flat[0]
 	}
@@ -539,6 +599,80 @@ func (a *Arena) sum(id TypeID) []TypeID {
 	}
 	r := a.sums[n.data]
 	return a.refs[r.off : r.off+r.len]
+}
+
+func (a *Arena) rawIntWithinBounds(raw string, r intBounds) bool {
+	if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if r.flags&hasMin != 0 {
+			bn := a.Node(r.min)
+			switch integerKind(bn.data) {
+			case sint:
+				if v < a.int64(bn.data) {
+					return false
+				}
+			case bint:
+				bv, _ := a.bigIntData(bn.data)
+				if !bv.negative() {
+					// NOTE(i4k): you know why, right?
+					return false
+				}
+			}
+		}
+		if r.flags&hasMax != 0 {
+			bn := a.Node(r.max)
+			switch integerKind(bn.data) {
+			case sint:
+				if v > a.int64(bn.data) {
+					return false
+				}
+			case bint:
+				bv, _ := a.bigIntData(bn.data)
+				if bv.negative() {
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	var v big.Int
+	_, ok := v.SetString(raw, 10)
+	if !ok {
+		panic("unreachable")
+	}
+	if r.flags&hasMin != 0 {
+		if cmp := a.compareBigIntData(&v, r.min); cmp < 0 {
+			return false
+		}
+	}
+	if r.flags&hasMax != 0 {
+		if cmp := a.compareBigIntData(&v, r.max); cmp > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *Arena) compareBigIntData(x *big.Int, yID TypeID) int {
+	yn := a.Node(yID)
+	if integerKind(yn.data) == sint {
+		var yb big.Int
+		yb.SetInt64(a.int64(yn.data))
+		return x.Cmp(&yb)
+	}
+	yb, mag := a.bigIntData(yn.data)
+	xneg := x.Sign() < 0
+	if xneg != yb.negative() {
+		if xneg {
+			return -1
+		}
+		return 1
+	}
+	cmp := compareMagnitude(x.Bytes(), mag)
+	if xneg {
+		cmp = -cmp
+	}
+	return cmp
 }
 
 func equalTypeIDs(a, b []TypeID) bool {
