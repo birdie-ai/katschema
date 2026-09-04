@@ -291,9 +291,6 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 	switch c.t.Node(id).Kind() {
 	case ast.Name:
 		name := c.t.Name(id)
-		if typ, ok := c.a.intBuiltinType(name); ok {
-			return typ, nil
-		}
 		if typ, ok := c.a.floatBuiltinType(name); ok {
 			return typ, nil
 		}
@@ -314,6 +311,22 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 			return c.a.Float(), nil
 		case "string":
 			return c.a.String(), nil
+		case "int8":
+			return c.a.Int8(), nil
+		case "int16":
+			return c.a.Int16(), nil
+		case "int32":
+			return c.a.Int32(), nil
+		case "int64":
+			return c.a.Int64(), nil
+		case "uint8":
+			return c.a.Uint8(), nil
+		case "uint16":
+			return c.a.Uint16(), nil
+		case "uint32":
+			return c.a.Uint32(), nil
+		case "uint64":
+			return c.a.Uint64(), nil
 		default:
 			return 0, c.errorf(id, "unresolved type %q", c.t.Name(id))
 		}

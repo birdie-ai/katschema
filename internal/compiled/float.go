@@ -20,15 +20,15 @@ func (a *Arena) internFloatFormat(format floatFmt) TypeID {
 	if format != f32Fmt && format != f64Fmt {
 		panic("invalid float format")
 	}
-	return a.internRefined(a.realID, a.internConstraint(normConstraint{format: format}))
+	return a.internRefined(a.real, a.internConstraint(normConstraint{format: format}))
 }
 
 func (a *Arena) floatBuiltinType(name string) (TypeID, bool) {
 	switch name {
 	case "float32":
-		return a.float32ID, true
+		return a.f32, true
 	case "float64", "float":
-		return a.float64ID, true
+		return a.f64, true
 	default:
 		return 0, false
 	}
