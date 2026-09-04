@@ -90,7 +90,3 @@ func canonicalFloat(v float64) float64 {
 	}
 	return v
 }
-
-func floatEqual(a, b float64) bool {
-	return math.Float64bits(canonicalFloat(a)) == math.Float64bits(canonicalFloat(b))
-}

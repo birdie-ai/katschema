@@ -97,7 +97,7 @@ const (
 	constraintFloatConv
 )
 
-func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstraint, clauses []ast.NodeID) (ct normConstraint, impossible bool, err error) {
+func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstraint, clauses []ast.NodeID) (ct ConstraintID, impossible bool, err error) {
 	n := normalizer{c: c, base: base, n: initial}
 	for _, id := range clauses {
 		if c.t.Node(id).Kind() != ast.Constraint {
@@ -105,7 +105,7 @@ func (c *compiler) extendNormalizeConstraints(base TypeID, initial normConstrain
 		}
 		err := n.consume(c.t.Constraint(id))
 		if err != nil {
-			return normConstraint{}, false, err
+			return 0, false, err
 		}
 	}
 	return n.finish()
@@ -379,13 +379,6 @@ func (n *normalizer) literal(id ast.NodeID) (TypeID, error) {
 		if err != nil {
 			return 0, err
 		}
-		if n.c.a.baseKind(n.base) == Float {
-			floatAtom, ok := n.c.a.floatAtom(t)
-			if !ok {
-				return 0, n.c.errorf(id, "literal cannot be represented as a float")
-			}
-			t = floatAtom
-		}
 		return t, nil
 	case ast.Decimal:
 		t, err := n.c.scalarLiteralAtom(id)
@@ -423,17 +416,6 @@ func (n *normalizer) valueBound(op token.Kind, literal ast.NodeID) error {
 			return err
 		}
 		n.applyInt(op, v)
-		return nil
-	case Float:
-		if litKind != ast.Decimal {
-			return n.c.errorf(literal, "float constraint requires an float bound")
-		}
-		raw := n.c.t.Decimal(literal)
-		v, err := strconv.ParseFloat(raw, 64)
-		if err != nil {
-			return n.c.errorf(literal, "invalid numeric bound %q", raw)
-		}
-		n.applyFloat(op, canonicalFloat(v))
 		return nil
 	case Real:
 		var v TypeID
@@ -547,42 +529,6 @@ func (n *normalizer) applyReal(op token.Kind, v TypeID) {
 	}
 }
 
-func (n *normalizer) applyFloat(op token.Kind, v float64) {
-	r := &n.n.floats
-	switch op {
-	default:
-		panic(op)
-	case token.Gt, token.Ge:
-		// NOTE(i4k): the complex branch below set the minimum value.
-		//   - If a minimum is already set, update it only when it's more restrictive.
-		//   - If r.min == v then update only if when changing from inclusive bound to exclusive.
-		// I'm tempted to change this to boolean switch cases with fallthroughs.
-		// It's hard to abstract this in a function without obscuring what it does.
-
-		inclusive := op == token.Ge
-		if r.flags&hasMin == 0 || v > r.min || v == r.min && !inclusive && r.flags&minInclusive != 0 {
-			r.min = v
-			r.flags |= hasMin
-			if inclusive {
-				r.flags |= minInclusive
-			} else {
-				r.flags &^= minInclusive
-			}
-		}
-	case token.Lt, token.Le:
-		inclusive := op == token.Le
-		if r.flags&hasMax == 0 || v < r.max || v == r.max && !inclusive && r.flags&maxInclusive != 0 {
-			r.max = v
-			r.flags |= hasMax
-			if inclusive {
-				r.flags |= maxInclusive
-			} else {
-				r.flags &^= maxInclusive
-			}
-		}
-	}
-}
-
 func (n *normalizer) applyLen(op token.Kind, v int64) {
 	switch op {
 	case token.Gt:
@@ -647,12 +593,12 @@ func (n *normalizer) addEnum(v []TypeID) {
 	n.n.enum = out
 }
 
-func (n *normalizer) finish() (ct normConstraint, impossible bool, err error) {
+func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 	if n.impossible {
-		return normConstraint{}, true, nil
+		return 0, true, nil
 	}
 	if n.c.a.impossibleIntBounds(n.n.ints) || n.c.a.impossibleRealBounds(n.n.reals) || impossibleFloatBounds(n.n.floats) || impossibleLenBounds(n.n.length) {
-		return normConstraint{}, true, nil
+		return 0, true, nil
 	}
 
 	kind := n.c.a.baseKind(n.base)
@@ -668,12 +614,6 @@ func (n *normalizer) finish() (ct normConstraint, impossible bool, err error) {
 				n.n.enum = []TypeID{n.n.reals.min}
 				n.n.reals = realBounds{}
 			}
-		case Float:
-			// TODO(i4k): binary equality of floats for now...
-			if singleFloat(n.n.floats) {
-				n.n.enum = []TypeID{n.c.a.internFloat(n.n.floats.min)}
-				n.n.floats = floatBounds{}
-			}
 		}
 	}
 
@@ -686,7 +626,7 @@ func (n *normalizer) finish() (ct normConstraint, impossible bool, err error) {
 		}
 		n.n.enum = out
 		if len(out) == 0 {
-			return normConstraint{}, true, nil
+			return 0, true, nil
 		}
 		// NOTE(i4k): Once schema has enums the other restrictions are redundant.
 		// We can check for clauses conflicting with the enums later and fail in such cases.
@@ -696,7 +636,10 @@ func (n *normalizer) finish() (ct normConstraint, impossible bool, err error) {
 		n.n.floats = floatBounds{}
 		n.n.length = lenBounds{}
 	}
-	return n.n, false, nil
+	if emptyConstraint(n.n) {
+		return 0, false, nil
+	}
+	return n.c.a.internConstraint(n.n), false, nil
 }
 
 func (a *Arena) impossibleIntBounds(r intBounds) bool {
@@ -740,10 +683,6 @@ func (a *Arena) singleInt(r intBounds) bool {
 
 func (a *Arena) singleReal(r realBounds) bool {
 	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && a.compareAtom(r.min, r.max) == 0
-}
-
-func singleFloat(r floatBounds) bool {
-	return r.flags&(hasMin|minInclusive|hasMax|maxInclusive) == hasMin|minInclusive|hasMax|maxInclusive && r.min == r.max
 }
 
 func (a *Arena) internConstraint(n normConstraint) ConstraintID {
@@ -923,14 +862,6 @@ func (a *Arena) compareAtom(x, y TypeID) int {
 		}
 	case IntAtom:
 		return a.compareInts(xn.data, yn.data)
-	case FloatAtom:
-		xv, yv := a.floats[xn.data], a.floats[yn.data]
-		if xv < yv {
-			return -1
-		}
-		if xv > yv {
-			return 1
-		}
 	case StringAtom:
 		xv, yv := a.StringValue(StringID(xn.data)), a.StringValue(StringID(yn.data))
 		if xv < yv {
@@ -967,14 +898,6 @@ func (a *Arena) atomCompat(base, atom TypeID) bool {
 		return lk == IntAtom
 	case Real:
 		return lk == IntAtom || lk == RealAtom
-	case Float:
-		// TODO(i4k): not sure if we should allow int here but allowing makes it easier to use...
-		// for context, this is used in several cases.
-		// ex1: (float, x == 3)
-		//      maybe we should require (float, x == 3.0) to be explicit.
-		// ex2: (float, x IN [1, 2])
-		//      maybe we should require (float, x IN [1.0, 2.0])
-		return lk == FloatAtom || lk == RealAtom || (lk == IntAtom && a.isIntSmall(ln.data))
 	case String:
 		return lk == StringAtom
 	}
@@ -1007,8 +930,6 @@ func (a *Arena) atomSatisfiesNormConstraint(id TypeID, n normConstraint) bool {
 			if !ok {
 				return false
 			}
-		case FloatAtom:
-			v = a.floats[node.data]
 		case RealAtom:
 			var ok bool
 			v, ok = a.realToFloat64(id)

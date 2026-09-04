@@ -21,7 +21,6 @@ const (
 	Null
 	Bool
 	Int
-	Float
 	String
 
 	// Atom kinds are compact scalar payloads referenced by constraints, usually defined as
@@ -29,7 +28,6 @@ const (
 	// One such source of atoms are literals because they are interned as refined types.
 	BoolAtom
 	IntAtom
-	FloatAtom
 	StringAtom
 	List
 	Tuple
@@ -52,8 +50,6 @@ func (k Kind) String() string {
 		return "bool"
 	case Int:
 		return "int"
-	case Float:
-		return "number"
 	case Real:
 		return "real"
 	case String:
@@ -62,8 +58,6 @@ func (k Kind) String() string {
 		return "bool atom"
 	case IntAtom:
 		return "int atom"
-	case FloatAtom:
-		return "number atom"
 	case RealAtom:
 		return "real atom"
 	case StringAtom:

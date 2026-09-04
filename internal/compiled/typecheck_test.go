@@ -1,9 +1,11 @@
 package compiled
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/birdie-ai/katschema/ks"
+	"github.com/birdie-ai/katschema/math/decimal"
 )
 
 func TestTypeCheck(t *testing.T) {
@@ -40,6 +42,20 @@ func TestTypeCheck(t *testing.T) {
 				if !ok || a.Node(atom).Kind() != RealAtom {
 					t.Fatalf("typed literal atom = %d, %t, want a real literal", atom, ok)
 				}
+
+				gotNumber, ok := a.DecimalValue(atom)
+				if !ok {
+					t.Fatalf("typed literal atom = %d is not a decimal value", atom)
+				}
+				wantNumber, err := decimal.Parse([]byte("10.0"), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if gotNumber.Neg != wantNumber.Neg ||
+					gotNumber.Exp != wantNumber.Exp ||
+					!bytes.Equal(gotNumber.Digits, wantNumber.Digits) {
+					t.Fatalf("typed literal atom = %#v, want %#v", gotNumber, wantNumber)
+				}
 			},
 		},
 		{
@@ -67,17 +83,14 @@ func TestTypeCheck(t *testing.T) {
 			),
 			check: func(t *testing.T, a *Arena, got TypeID) {
 				fields := a.Type(got).Fields()
-				for i := 0; i < fields.Len(); i++ {
-					field := fields.At(i)
-					if field.Name() != "temp" {
-						continue
-					}
-					if a.Type(field.Type()).Base() != a.Float32() {
-						t.Fatalf("temp base = %d, want float32 %d", a.Type(field.Type()).Base(), a.Float32())
-					}
-					return
+				temp := fields.MustGet("temp")
+				name := fields.MustGet("name")
+				if tempBase := a.Type(temp.Type()).Base(); tempBase != a.Float32() {
+					t.Fatalf("temp base = %d, want float32 %d", tempBase, a.Float32())
 				}
-				t.Fatal("typed object has no temp field")
+				if nameType := a.Type(name.Type()).Base(); nameType != a.String() {
+					t.Fatalf("name is not a string: %d", nameType)
+				}
 			},
 		},
 		{

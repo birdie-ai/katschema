@@ -3,6 +3,8 @@ package compiled
 import (
 	"math"
 	"strconv"
+
+	"github.com/birdie-ai/katschema/math/decimal"
 )
 
 // floatFmt is an intrinsic conversion constraint for a mathematical real.
@@ -20,18 +22,7 @@ func (a *Arena) internFloatFormat(format floatFmt) TypeID {
 	if format != f32Fmt && format != f64Fmt {
 		panic("invalid float format")
 	}
-	return a.internRefined(a.realID, a.internConstraint(normConstraint{format: format}))
-}
-
-func (a *Arena) floatBuiltinType(name string) (TypeID, bool) {
-	switch name {
-	case "float32":
-		return a.float32ID, true
-	case "float64", "float":
-		return a.float64ID, true
-	default:
-		return 0, false
-	}
+	return a.internRefined(a.real, a.internConstraint(normConstraint{format: format}))
 }
 
 func (a *Arena) realCanBeFloat(id TypeID, format floatFmt) bool {
@@ -39,7 +30,7 @@ func (a *Arena) realCanBeFloat(id TypeID, format floatFmt) bool {
 	return ok && decimalCanBeFloat(v, format)
 }
 
-func decimalCanBeFloat(v decimalNumber, format floatFmt) bool {
+func decimalCanBeFloat(v decimal.Number, format floatFmt) bool {
 	var bits int
 	switch format {
 	case f32Fmt:

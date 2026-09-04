@@ -1,5 +1,7 @@
 package compiled
 
+import "fmt"
+
 // Type is a cheap read-only view over a TypeID.
 type Type struct {
 	a  *Arena
@@ -59,6 +61,10 @@ func (t Type) Fields() Fields {
 	return Fields{a: t.a, v: t.a.objectFields(t.id)}
 }
 
+func (t Type) MustGetField(name string) FieldView {
+	return t.Fields().MustGet(name)
+}
+
 func (t Type) Base() TypeID {
 	if t.a == nil {
 		return 0
@@ -82,6 +88,16 @@ func (f Fields) At(i int) FieldView {
 		return FieldView{}
 	}
 	return FieldView{a: f.a, f: f.v[i]}
+}
+
+func (f Fields) MustGet(name string) FieldView {
+	for i := 0; i < f.Len(); i++ {
+		field := f.At(i)
+		if field.Name() == name {
+			return field
+		}
+	}
+	panic(fmt.Sprintf("field %q not found", name))
 }
 
 type FieldView struct {

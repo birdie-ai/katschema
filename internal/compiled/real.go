@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"math/big"
 	"strconv"
+
+	"github.com/birdie-ai/katschema/math/decimal"
 )
 
 // realValue stores the coefficient of an exact decimal and its base-10
@@ -91,12 +93,12 @@ func (a *Arena) internRawReal(negative bool, digits []byte, exp int64) TypeID {
 	return a.appendNode(Node{kind: RealAtom, data: i}, fp, a.hashHead[fp])
 }
 
-func (a *Arena) realNumber(id TypeID) (decimalNumber, bool) {
+func (a *Arena) realNumber(id TypeID) (decimal.Number, bool) {
 	n := a.Node(id)
 	switch n.kind {
 	case RealAtom:
 		v, digits := a.realData(n.data)
-		return decimalNumber{negative: v.negative(), digits: digits, exp: v.exp}, true
+		return decimal.Number{Neg: v.negative(), Digits: digits, Exp: v.exp}, true
 	case IntAtom:
 		var raw string
 		if n.data > 0 {
@@ -108,75 +110,87 @@ func (a *Arena) realNumber(id TypeID) (decimalNumber, bool) {
 		if negative {
 			raw = raw[1:]
 		}
-		return decimalNumber{negative: negative, digits: []byte(raw)}, true
+		return decimal.Number{Neg: negative, Digits: []byte(raw)}, true
 	default:
-		return decimalNumber{}, false
+		return decimal.Number{}, false
 	}
 }
 
-type decimalNumber struct {
-	negative bool
-	digits   []byte
-	exp      int64
+// DecimalValue returns the exact decimal represented by a numeric literal.
+//
+// The input may be an IntAtom, RealAtom, or a singleton literal refinement.
+// The returned digits are copied so callers may safely mutate the result
+// without modifying the arena.
+func (a *Arena) DecimalValue(id TypeID) (decimal.Number, bool) {
+	atom, ok := a.Literal(id)
+	if !ok {
+		return decimal.Number{}, false
+	}
+	v, ok := a.realNumber(atom)
+	if !ok {
+		return decimal.Number{}, false
+	}
+	v.Digits = append([]byte(nil), v.Digits...)
+	return v, true
 }
 
-func (v decimalNumber) zero() bool {
-	return len(v.digits) == 1 && v.digits[0] == '0'
+func decimalZero(v decimal.Number) bool {
+	return len(v.Digits) == 1 && v.Digits[0] == '0'
 }
 
-func compareDecimalNumbers(x, y decimalNumber) int {
-	xzero, yzero := x.zero(), y.zero()
+func compareDecimalNumbers(x, y decimal.Number) int {
+	xzero, yzero := decimalZero(x), decimalZero(y)
 	if xzero || yzero {
 		switch {
 		case xzero && yzero:
 			return 0
 		case xzero:
-			if y.negative {
+			if y.Neg {
 				return 1
 			}
 			return -1
 		default:
-			if x.negative {
+			if x.Neg {
 				return -1
 			}
 			return 1
 		}
 	}
-	if x.negative != y.negative {
-		if x.negative {
+	if x.Neg != y.Neg {
+		if x.Neg {
 			return -1
 		}
 		return 1
 	}
 
 	cmp := compareDecimalMagnitude(x, y)
-	if x.negative {
+	if x.Neg {
 		return -cmp
 	}
 	return cmp
 }
 
-func compareDecimalMagnitude(x, y decimalNumber) int {
+func compareDecimalMagnitude(x, y decimal.Number) int {
 	// Compare the position of the most significant digit first. big.Int is
 	// used only for this exponent arithmetic, avoiding overflow at the edge
 	// of int64 while keeping coefficient storage compact.
 	var xe, ye big.Int
-	xe.SetInt64(x.exp)
-	xe.Add(&xe, big.NewInt(int64(len(x.digits))))
-	ye.SetInt64(y.exp)
-	ye.Add(&ye, big.NewInt(int64(len(y.digits))))
+	xe.SetInt64(x.Exp)
+	xe.Add(&xe, big.NewInt(int64(len(x.Digits))))
+	ye.SetInt64(y.Exp)
+	ye.Add(&ye, big.NewInt(int64(len(y.Digits))))
 	if cmp := xe.Cmp(&ye); cmp != 0 {
 		return cmp
 	}
 
-	n := max(len(x.digits), len(y.digits))
+	n := max(len(x.Digits), len(y.Digits))
 	for i := 0; i < n; i++ {
 		xd, yd := byte('0'), byte('0')
-		if i < len(x.digits) {
-			xd = x.digits[i]
+		if i < len(x.Digits) {
+			xd = x.Digits[i]
 		}
-		if i < len(y.digits) {
-			yd = y.digits[i]
+		if i < len(y.Digits) {
+			yd = y.Digits[i]
 		}
 		if xd < yd {
 			return -1
@@ -202,7 +216,7 @@ func (a *Arena) realFromIntAtom(id TypeID) TypeID {
 	if !ok || a.Node(id).kind != IntAtom {
 		panic("unexpected")
 	}
-	return a.internRawReal(v.negative, v.digits, v.exp)
+	return a.internRawReal(v.Neg, v.Digits, v.Exp)
 }
 
 func (a *Arena) realString(id TypeID) string {
@@ -213,18 +227,18 @@ func (a *Arena) realString(id TypeID) string {
 	return decimalNumberString(v)
 }
 
-func decimalNumberString(v decimalNumber) string {
-	if v.zero() {
+func decimalNumberString(v decimal.Number) string {
+	if decimalZero(v) {
 		return "0"
 	}
 	var out []byte
-	if v.negative {
+	if v.Neg {
 		out = append(out, '-')
 	}
-	out = append(out, v.digits...)
-	if v.exp != 0 {
+	out = append(out, v.Digits...)
+	if v.Exp != 0 {
 		out = append(out, 'e')
-		out = strconv.AppendInt(out, v.exp, 10)
+		out = strconv.AppendInt(out, v.Exp, 10)
 	}
 	return string(out)
 }
@@ -232,24 +246,4 @@ func decimalNumberString(v decimalNumber) string {
 func (a *Arena) realToFloat64(id TypeID) (float64, bool) {
 	v, err := strconv.ParseFloat(a.realString(id), 64)
 	return canonicalFloat(v), err == nil
-}
-
-func (a *Arena) floatAtom(id TypeID) (TypeID, bool) {
-	switch a.Node(id).kind {
-	case FloatAtom:
-		return id, true
-	case IntAtom:
-		if !a.isIntSmall(a.Node(id).data) {
-			return 0, false
-		}
-		return a.internFloat(float64(a.int64(a.Node(id).data))), true
-	case RealAtom:
-		v, ok := a.realToFloat64(id)
-		if !ok {
-			return 0, false
-		}
-		return a.internFloat(v), true
-	default:
-		return 0, false
-	}
 }

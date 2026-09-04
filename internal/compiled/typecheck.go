@@ -14,10 +14,6 @@ import "fmt"
 // is retained; the schema only supplies the type context and the precondition
 // that the value is accepted.
 func (a *Arena) TypeCheck(schema, value TypeID) (TypeID, error) {
-	a.init()
-	if schema == 0 || value == 0 {
-		return 0, fmt.Errorf("compiled: invalid schema or value (schema %d, value %d)", schema, value)
-	}
 	if !a.Subtype(value, schema) {
 		return 0, fmt.Errorf("compiled: value %d is not a subtype of schema %d", value, schema)
 	}
@@ -25,7 +21,7 @@ func (a *Arena) TypeCheck(schema, value TypeID) (TypeID, error) {
 }
 
 func (a *Arena) typeCheck(schema, value TypeID) TypeID {
-	if schema == a.anyID || schema == value || value == a.neverID {
+	if schema == a.any || schema == value || value == a.never {
 		return value
 	}
 
@@ -101,9 +97,9 @@ func (a *Arena) typeCheckBase(schema TypeID) TypeID {
 	if d.flags&constraintFloatConv != 0 {
 		switch d.format {
 		case f32Fmt:
-			return a.float32ID
+			return a.f32
 		case f64Fmt:
-			return a.float64ID
+			return a.f64
 		}
 	}
 	return r.base
@@ -114,10 +110,6 @@ func (a *Arena) typeCheckAtom(base, atom TypeID) TypeID {
 	case Real:
 		if a.Node(atom).kind == IntAtom {
 			return a.realFromIntAtom(atom)
-		}
-	case Float:
-		if converted, ok := a.floatAtom(atom); ok {
-			return converted
 		}
 	}
 	return atom

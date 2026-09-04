@@ -14,13 +14,13 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 	// Subtype(a, a) 		 == true because a accepts all a values.
 	// Subtype((never), ...) == true because (never) accepts no value which b also accepts.
 	// Subtype(..., (any))   == true because b accepts everything.
-	if a == b || a == x.neverID || b == x.anyID {
+	if a == b || a == x.never || b == x.any {
 		return true
 	}
 
 	// Subtype((any), ...)   == false because otherwise the other type is (any) itself.
 	// Subtype(..., (never)) == false because never accepts no value, so accepts none of a values.
-	if a == 0 || b == 0 || a == x.anyID || b == x.neverID {
+	if a == 0 || b == 0 || a == x.any || b == x.never {
 		return false
 	}
 
@@ -67,8 +67,6 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 			return x.compareAtom(a, b) == 0
 		}
 		return false
-	case FloatAtom:
-		return bn.kind == Float
 	case RealAtom:
 		return bn.kind == Real
 	case StringAtom:
