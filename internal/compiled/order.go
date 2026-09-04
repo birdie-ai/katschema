@@ -67,8 +67,6 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 			return x.compareAtom(a, b) == 0
 		}
 		return false
-	case FloatAtom:
-		return bn.kind == Float
 	case RealAtom:
 		return bn.kind == Real
 	case StringAtom:

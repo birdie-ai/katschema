@@ -233,23 +233,3 @@ func (a *Arena) realToFloat64(id TypeID) (float64, bool) {
 	v, err := strconv.ParseFloat(a.realString(id), 64)
 	return canonicalFloat(v), err == nil
 }
-
-func (a *Arena) floatAtom(id TypeID) (TypeID, bool) {
-	switch a.Node(id).kind {
-	case FloatAtom:
-		return id, true
-	case IntAtom:
-		if !a.isIntSmall(a.Node(id).data) {
-			return 0, false
-		}
-		return a.internFloat(float64(a.int64(a.Node(id).data))), true
-	case RealAtom:
-		v, ok := a.realToFloat64(id)
-		if !ok {
-			return 0, false
-		}
-		return a.internFloat(v), true
-	default:
-		return 0, false
-	}
-}

@@ -249,23 +249,6 @@ func (a *Arena) internBigInt(v *big.Int) TypeID {
 	return a.internRawBigInt(v.Sign() < 0, v.Bytes())
 }
 
-func (a *Arena) internFloat(v float64) TypeID {
-	v = canonicalFloat(v)
-	a.scratch = a.scratch[:0]
-	a.scratch = append(a.scratch, encodingVersion, byte(FloatAtom))
-	a.scratch = putf64(a.scratch, v)
-	fp := a.hash(a.scratch)
-	if id := a.find(fp, func(id TypeID) bool {
-		n := a.nodes[id]
-		return n.kind == FloatAtom && floatEqual(a.floats[n.data], v)
-	}); id != 0 {
-		return id
-	}
-	i := int32(len(a.floats))
-	a.floats = append(a.floats, v)
-	return a.appendNode(Node{kind: FloatAtom, data: i}, fp, a.hashHead[fp])
-}
-
 func (a *Arena) internStringAtom(s string) TypeID {
 	name := a.internString(s)
 	a.scratch = a.scratch[:0]
@@ -297,7 +280,7 @@ func (a *Arena) internLiteral(base, atom TypeID) TypeID {
 func (a *Arena) Literal(id TypeID) (TypeID, bool) {
 	n := a.Node(id)
 	switch n.kind {
-	case Null, BoolAtom, IntAtom, FloatAtom, RealAtom, StringAtom:
+	case Null, BoolAtom, IntAtom, RealAtom, StringAtom:
 		return id, true
 	case Refined:
 		r := a.refinements[n.data]

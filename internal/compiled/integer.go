@@ -52,10 +52,6 @@ func (v bigInt) magnitudeLen() int32 {
 	return v.size
 }
 
-func (a *Arena) isIntSmall(data int32) bool {
-	return data > 0
-}
-
 func (a *Arena) int64(data int32) int64 {
 	if data <= 0 {
 		panic("programming error")

@@ -32,8 +32,6 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		return astInt(t, value)
 	case Real:
 		return astReal(t, value)
-	case Float:
-		return asFloat(t, value)
 	case String:
 		return t.Node(value).Kind() == ast.String
 	case BoolAtom:
@@ -51,12 +49,6 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 			return false
 		}
 		return a.equalBigInts(n.data, v.Sign() < 0, v.Bytes())
-	case FloatAtom:
-		if t.Node(value).Kind() != ast.Decimal {
-			return false
-		}
-		v, err := strconv.ParseFloat(t.Decimal(value), 64)
-		return err == nil && floatEqual(v, a.floats[n.data])
 	case RealAtom:
 		got, ok := astRealNumber(t, value)
 		if !ok {
@@ -345,11 +337,6 @@ func astInt64(t *ast.Tree, id ast.NodeID) (int64, bool) {
 	}
 	v, err := strconv.ParseInt(raw, 10, 64)
 	return v, err == nil
-}
-
-func asFloat(t *ast.Tree, id ast.NodeID) bool {
-	_, ok := astFloat64(t, id)
-	return ok
 }
 
 func astFloat64(t *ast.Tree, id ast.NodeID) (float64, bool) {
