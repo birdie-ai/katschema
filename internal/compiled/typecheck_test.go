@@ -37,18 +37,7 @@ func TestTypeCheck(t *testing.T) {
 				if a.Type(got).Base() != a.Real() {
 					t.Fatalf("typed literal base = %d, want real %d", a.Type(got).Base(), a.Real())
 				}
-				atom, ok := a.Literal(got)
-				if !ok || a.Node(atom).Kind() != RealAtom {
-					t.Fatalf("typed literal atom = %d, %t, want a real literal", atom, ok)
-				}
-
-				gotNumber, ok := a.DecimalValue(atom)
-				if !ok {
-					t.Fatalf("typed literal atom = %d is not a decimal value", atom)
-				}
-				if want := decimal.New("10"); !gotNumber.Equal(want) {
-					t.Fatalf("got [%s] != want [%s]", gotNumber, want)
-				}
+				checkDecimal(t, a, got, "10", RealAtom)
 			},
 		},
 		{
@@ -59,9 +48,7 @@ func TestTypeCheck(t *testing.T) {
 				if a.Type(got).Base() != a.Float32() {
 					t.Fatalf("typed literal base = %d, want float32 %d", a.Type(got).Base(), a.Float32())
 				}
-				if _, ok := a.Literal(got); !ok {
-					t.Fatalf("typed value %d is not a literal", got)
-				}
+				checkDecimal(t, a, got, "31.5", RealAtom)
 			},
 		},
 		{
@@ -112,5 +99,19 @@ func TestTypeCheck(t *testing.T) {
 			}
 			tc.check(t, a, got)
 		})
+	}
+}
+
+func checkDecimal(t *testing.T, a *Arena, got TypeID, want string, wantKind Kind) {
+	atom, ok := a.Literal(got)
+	if !ok || a.Node(atom).Kind() != wantKind {
+		t.Fatalf("typed literal atom = %d, %t, want a real literal", atom, ok)
+	}
+	gotVal, ok := a.DecimalValue(atom)
+	if !ok {
+		t.Fatalf("not a decimal: %d", got)
+	}
+	if want := decimal.New(want); !gotVal.Equal(want) {
+		t.Fatalf("got [%s] != want [%s]", gotVal, want)
 	}
 }

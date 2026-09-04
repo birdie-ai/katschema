@@ -118,7 +118,7 @@ func (a *Arena) realNumber(id TypeID) (decimal.Number, bool) {
 
 // DecimalValue returns the exact decimal represented by a numeric literal.
 //
-// The input may be an IntAtom, RealAtom, or a singleton literal refinement.
+// The input may be an IntAtom, RealAtom, or literal refinement.
 // The returned digits are copied so callers may safely mutate the result
 // without modifying the arena.
 func (a *Arena) DecimalValue(id TypeID) (decimal.Number, bool) {
