@@ -161,6 +161,17 @@ func LitDecimal(raw string) Value {
 	return Value{kind: valueDecimal, text: raw}
 }
 
+// LitReal returns an exact decimal value. The raw value is parsed and
+// canonicalized when the value is compiled.
+func LitReal(raw string) Value {
+	return Value{kind: valueFloat, text: raw}
+}
+
+// LitDecimal is kept as a descriptive alias for LitReal.
+func LitDecimal(raw string) Value {
+	return LitReal(raw)
+}
+
 func LitString(v string) Value {
 	return Value{kind: valueString, text: v}
 }
@@ -258,6 +269,11 @@ func IntExpr(v int64) Expr {
 // DecimalExpr returns an exact decimal value as an expression.
 func DecimalExpr(raw string) Expr {
 	return ValueExpr(LitDecimal(raw))
+}
+
+// RealExpr returns an exact decimal value as an expression.
+func RealExpr(raw string) Expr {
+	return ValueExpr(LitReal(raw))
 }
 
 // ListExpr returns a list as an expression.

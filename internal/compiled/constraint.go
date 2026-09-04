@@ -717,6 +717,17 @@ func (a *Arena) impossibleRealBounds(r realBounds) bool {
 	return cmp == 0 && (r.flags&minInclusive == 0 || r.flags&maxInclusive == 0)
 }
 
+func (a *Arena) impossibleRealBounds(r realBounds) bool {
+	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
+		return false
+	}
+	cmp := a.compareLiteral(r.min, r.max)
+	if cmp > 0 {
+		return true
+	}
+	return cmp == 0 && (r.flags&minInclusive == 0 || r.flags&maxInclusive == 0)
+}
+
 func impossibleLenBounds(r lenBounds) bool {
 	if r.flags&(hasMin|hasMax) != hasMin|hasMax {
 		return false
@@ -761,6 +772,11 @@ func (a *Arena) internConstraint(n normConstraint) ConstraintID {
 	}
 	if n.format != noFmt {
 		a.scratch = append(a.scratch, constraintFloatConv, byte(n.format))
+	}
+	if n.reals.flags != 0 {
+		a.scratch = append(a.scratch, constraintReal, byte(n.reals.flags))
+		a.scratch = a.putRealLiteral(a.scratch, n.reals.min)
+		a.scratch = a.putRealLiteral(a.scratch, n.reals.max)
 	}
 	if n.floats.flags != 0 {
 		a.scratch = append(a.scratch, constraintFloat, byte(n.floats.flags))
@@ -995,6 +1011,11 @@ func (a *Arena) atomSatisfiesNormConstraint(id TypeID, n normConstraint) bool {
 	}
 	if n.format != noFmt {
 		if (node.kind != IntAtom && node.kind != RealAtom) || !a.realCanBeFloat(id, n.format) {
+			return false
+		}
+	}
+	if n.reals.flags != 0 {
+		if (node.kind != IntLit && node.kind != RealLit) || !a.checkRealLiteralBounds(id, n.reals) {
 			return false
 		}
 	}
