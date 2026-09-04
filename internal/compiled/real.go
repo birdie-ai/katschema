@@ -224,23 +224,7 @@ func (a *Arena) realString(id TypeID) string {
 	if !ok {
 		panic("not a real atom")
 	}
-	return decimalNumberString(v)
-}
-
-func decimalNumberString(v decimal.Number) string {
-	if decimalZero(v) {
-		return "0"
-	}
-	var out []byte
-	if v.Neg {
-		out = append(out, '-')
-	}
-	out = append(out, v.Digits...)
-	if v.Exp != 0 {
-		out = append(out, 'e')
-		out = strconv.AppendInt(out, v.Exp, 10)
-	}
-	return string(out)
+	return v.String()
 }
 
 func (a *Arena) realToFloat64(id TypeID) (float64, bool) {

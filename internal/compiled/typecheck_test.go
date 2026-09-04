@@ -1,7 +1,6 @@
 package compiled
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/birdie-ai/katschema/ks"
@@ -47,14 +46,8 @@ func TestTypeCheck(t *testing.T) {
 				if !ok {
 					t.Fatalf("typed literal atom = %d is not a decimal value", atom)
 				}
-				wantNumber, err := decimal.Parse([]byte("10.0"), nil)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if gotNumber.Neg != wantNumber.Neg ||
-					gotNumber.Exp != wantNumber.Exp ||
-					!bytes.Equal(gotNumber.Digits, wantNumber.Digits) {
-					t.Fatalf("typed literal atom = %#v, want %#v", gotNumber, wantNumber)
+				if want := decimal.New("10"); !gotNumber.Equal(want) {
+					t.Fatalf("got [%s] != want [%s]", gotNumber, want)
 				}
 			},
 		},

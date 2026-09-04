@@ -2,9 +2,11 @@
 package decimal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 )
 
 var (
@@ -23,6 +25,41 @@ type Number struct {
 	Exp    int64
 	Digits []byte
 	Neg    bool
+}
+
+// String returns the canonical compact representation of the number.
+func (n Number) String() string {
+	if len(n.Digits) == 1 && n.Digits[0] == '0' {
+		return "0"
+	}
+	var out []byte
+	if n.Neg {
+		out = append(out, '-')
+	}
+	out = append(out, n.Digits...)
+	if n.Exp != 0 {
+		out = append(out, 'e')
+		out = strconv.AppendInt(out, n.Exp, 10)
+	}
+	return string(out)
+}
+
+// Equal reports whether two canonical decimal numbers have the same value.
+// Numbers returned by [Parse] and [New] are canonical.
+func (n Number) Equal(other Number) bool {
+	return n.Neg == other.Neg && n.Exp == other.Exp && bytes.Equal(n.Digits, other.Digits)
+}
+
+// New parses raw and panics if it is not a valid decimal number.
+//
+// It is intended for constants and tests. Use [Parse] when the input is not
+// trusted or the parsing error needs to be handled.
+func New(raw string) Number {
+	n, err := Parse([]byte(raw), nil)
+	if err != nil {
+		panic(fmt.Errorf("decimal.New(%q): %w", raw, err))
+	}
+	return n
 }
 
 // Parse parses raw into a canonical exact decimal number.
