@@ -170,6 +170,26 @@ func TestTypeCheck(t *testing.T) {
 			value:     ks.LitDecimal("10.5"),
 			wantError: true,
 		},
+		{
+			name: "refined value keeps its context",
+			schema: ks.Where(
+				ks.Int(),
+				ks.Binary(ks.X(), ks.Ge, ks.IntExpr(0)),
+			),
+			value: ks.Where(
+				ks.Int(),
+				ks.Binary(ks.X(), ks.Gt, ks.IntExpr(10)),
+			),
+			check: func(t *testing.T, a *Arena, got TypeID) {
+				want := compile(t, a, ks.Where(
+					ks.Int(),
+					ks.Binary(ks.X(), ks.Gt, ks.IntExpr(10)),
+				))
+				if got != want {
+					t.Fatalf("typed refined value = %d, want original value context %d", got, want)
+				}
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := NewArena()
