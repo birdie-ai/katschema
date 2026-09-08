@@ -2,8 +2,7 @@ package compiled
 
 import "fmt"
 
-// TypeCheck checks value against schema and returns value interpreted in the
-// schema's type context.
+// TypeCheck checks value against schema and returns value interpreted in the schema's type context.
 func (a *Arena) TypeCheck(schema, value TypeID) (TypeID, error) {
 	if !a.Subtype(value, schema) {
 		return 0, fmt.Errorf("compiled: value %d is not a subtype of schema %d", value, schema)

@@ -30,6 +30,46 @@ func TestTypeCheck(t *testing.T) {
 			},
 		},
 		{
+			name:   "literal int schema returns literal",
+			schema: ks.LitInt(10),
+			value:  ks.LitInt(10),
+			check: func(t *testing.T, a *Arena, got TypeID) {
+				if got != compile(t, a, ks.LitInt(10)) {
+					t.Fatalf("typed literal = %d, want the canonical int literal", got)
+				}
+			},
+		},
+		{
+			name:   "sum schema returns type of matched value - literal int",
+			schema: ks.Sum(ks.Int(), ks.String()),
+			value:  ks.LitInt(10),
+			check: func(t *testing.T, a *Arena, got TypeID) {
+				if got != compile(t, a, ks.LitInt(10)) {
+					t.Fatalf("typed literal = %d, want the canonical int literal", got)
+				}
+			},
+		},
+		{
+			name:   "sum schema returns type of matched value - string",
+			schema: ks.Sum(ks.Int(), ks.String()),
+			value:  ks.LitString("test"),
+			check: func(t *testing.T, a *Arena, got TypeID) {
+				if got != compile(t, a, ks.LitString("test")) {
+					t.Fatalf("typed literal = %d, want the canonical int literal", got)
+				}
+			},
+		},
+		{
+			name:   "list entries are converted",
+			schema: ks.List(ks.Int()),
+			value:  ks.List(ks.LitInt(1), ks.LitInt(2), ks.LitInt(3)),
+			check: func(t *testing.T, a *Arena, got TypeID) {
+				if got != compile(t, a, ks.List(ks.LitInt(1), ks.LitInt(2), ks.LitInt(3))) {
+					t.Fatalf("typed literal = %d, want the canonical int literal", got)
+				}
+			},
+		},
+		{
 			name:   "integer is interpreted as real",
 			schema: ks.Real(),
 			value:  ks.LitInt(10),
@@ -57,12 +97,12 @@ func TestTypeCheck(t *testing.T) {
 				ks.Field("temp", ks.Float32()),
 				ks.Field("name", ks.String()),
 				ks.Field("metadata", ks.Object(
-					ks.Field("a", ks.String()),
+					ks.Field("a", ks.With(ks.String(), ks.Check(ks.Binary(ks.X(), ks.In, ks.ListExpr(ks.LitString("abc"), ks.LitString("xyz")))))),
 				)),
 			),
 			value: ks.Object(
 				ks.Field("metadata", ks.Object(
-					ks.Field("a", ks.LitString("string")),
+					ks.Field("a", ks.LitString("abc")),
 				)),
 				ks.Field("temp", ks.LitDecimal("31.5")),
 				ks.Field("name", ks.LitString("weather")),
@@ -84,6 +124,43 @@ func TestTypeCheck(t *testing.T) {
 				metaFields := a.Type(meta.Type()).Fields()
 				if metaFields.Len() != 1 {
 					t.Fatalf("unexpected metadata fields length")
+				}
+				aField := metaFields.MustGet("a")
+				if abase := a.Type(aField.Type()).Base(); abase != a.String() {
+					t.Fatal("unexpected metadata.a base type")
+				}
+				_, ok := a.Literal(aField.Type())
+				if !ok {
+					t.Fatal("a value is not a literal")
+				}
+			},
+		},
+		{
+
+			name: "schema with object and optional fields makes returned value omit not present fields",
+			schema: ks.Object(
+				ks.Field("temp", ks.Float32()),
+				ks.Field("name", ks.String()),
+				ks.Field("metadata", ks.Optional(ks.Object(
+					ks.Field("a", ks.With(ks.String(), ks.Check(ks.Binary(ks.X(), ks.In, ks.ListExpr(ks.LitString("abc"), ks.LitString("xyz")))))),
+				))),
+			),
+			value: ks.Object(
+				ks.Field("temp", ks.LitDecimal("31.5")),
+				ks.Field("name", ks.LitString("weather")),
+			),
+			check: func(t *testing.T, a *Arena, got TypeID) {
+				fields := a.Type(got).Fields()
+				if fields.Len() != 2 {
+					t.Fatalf("unexpected length: %d, expected 3", fields.Len())
+				}
+				temp := fields.MustGet("temp")
+				name := fields.MustGet("name")
+				if tempBase := a.Type(temp.Type()).Base(); tempBase != a.Float32() {
+					t.Fatalf("temp base = %d, want float32 %d", tempBase, a.Float32())
+				}
+				if nameType := a.Type(name.Type()).Base(); nameType != a.String() {
+					t.Fatalf("name is not a string: %d", nameType)
 				}
 			},
 		},
