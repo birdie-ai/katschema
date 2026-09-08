@@ -166,19 +166,6 @@ func TestCompileIntern(t *testing.T) {
 			},
 		},
 		{
-			name: "metadata is ignored",
-			x: func(a *ast.Tree) ast.NodeID {
-				return a.AddSchema(
-					a.AddName("string", z),
-					[]ast.NodeID{a.AddAttr("something", a.AddInt("1337", z), true, z, z)},
-					z,
-				)
-			},
-			y: func(a *ast.Tree) ast.NodeID {
-				return a.AddSchema(a.AddName("string", z), nil, z)
-			},
-		},
-		{
 			name: "A | A => A",
 			x: func(a *ast.Tree) ast.NodeID {
 				return a.AddSum(

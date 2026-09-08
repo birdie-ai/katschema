@@ -25,6 +25,13 @@ type (
 		Name     string
 		Type     Type
 		Optional bool
+		metadata Metadata
+	}
+
+	// Metadata is the compiled set of attributes attached to a type or field.
+	Metadata struct {
+		arena *compiled.Arena
+		attrs []compiled.Attribute
 	}
 
 	// Compiler owns the canonical type used by a group of related compilations.
@@ -104,6 +111,7 @@ func (t Type) Fields() []Field {
 			Name:     field.Name(),
 			Type:     Type{arena: t.arena, id: field.Type()},
 			Optional: field.Optional(),
+			metadata: Metadata{arena: t.arena, attrs: field.Metadata()},
 		})
 	}
 	return out
@@ -119,11 +127,15 @@ func (t Type) Field(name string) (Field, bool) {
 				Name:     field.Name(),
 				Type:     Type{arena: t.arena, id: field.Type()},
 				Optional: field.Optional(),
+				metadata: Metadata{arena: t.arena, attrs: field.Metadata()},
 			}, true
 		}
 	}
 	return Field{}, false
 }
+
+// Metadata returns attributes attached directly to this field.
+func (f Field) Metadata() Metadata { return f.metadata }
 
 // Variants returns the members of a sum type.
 func (t Type) Variants() []Type {
@@ -150,6 +162,39 @@ func (t Type) Base() (Type, bool) {
 // Fingerprint returns the canonical identity of the compiled semantic type.
 func (t Type) Fingerprint() uint64 {
 	return t.arena.Fingerprint(t.id)
+}
+
+// SemanticFingerprint excludes metadata and identifies the accepted values.
+func (t Type) SemanticFingerprint() uint64 {
+	return t.arena.SemanticFingerprint(t.id)
+}
+
+// DefinitionFingerprint includes metadata and identifies the complete compiled definition.
+func (t Type) DefinitionFingerprint() uint64 { return t.Fingerprint() }
+
+// Metadata returns attributes attached directly to this type.
+func (t Type) Metadata() Metadata {
+	return Metadata{arena: t.arena, attrs: t.arena.TypeMetadata(t.id)}
+}
+
+// Get returns an attribute value. A flag attribute is returned as true.
+func (m Metadata) Get(name string) (any, bool) {
+	for _, attr := range m.attrs {
+		if attr.NameValue(m.arena) != name {
+			continue
+		}
+		if !attr.Has() {
+			return true, true
+		}
+		value, err := m.arena.MetadataValue(attr.ValueID())
+		return value, err == nil
+	}
+	return nil, false
+}
+
+func (m Metadata) Has(name string) bool {
+	_, ok := m.Get(name)
+	return ok
 }
 
 // SubtypeOf reports whether every value accepted by t is accepted by other.

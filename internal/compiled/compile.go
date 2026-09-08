@@ -212,7 +212,11 @@ func (c *compiler) object(id ast.NodeID) (TypeID, error) {
 		if optional {
 			flags |= FieldOptional
 		}
-		fields[i] = Field{Name: c.a.internString(name), Value: t, Flags: flags}
+		metadata, err := c.metadataForValue(f.Value)
+		if err != nil {
+			return 0, err
+		}
+		fields[i] = Field{Name: c.a.internString(name), Value: t, Flags: flags, Metadata: metadata}
 	}
 	return c.a.internObject(fields), nil
 }
@@ -280,7 +284,55 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	if impossible {
 		return c.a.Never(), optional, nil
 	}
-	return c.a.internRefined(base, constraint), optional, nil
+	metadata, err := c.metadata(s.Clauses)
+	if err != nil {
+		return 0, false, err
+	}
+	return c.a.internRefined(base, constraint, metadata), optional, nil
+}
+
+func (c *compiler) metadataForValue(id ast.NodeID) (MetadataID, error) {
+	if c.t.Node(id).Kind() != ast.Schema {
+		return 0, nil
+	}
+	// NOTE(i4k): schema already extracts metadata while compiling the refinement.
+	for _, clause := range c.t.Schema(id).Clauses {
+		if c.t.Node(clause).Kind() != ast.Attr {
+			continue
+		}
+		if c.t.Text(c.t.Attr(clause).Name) != "optional" {
+			return c.metadata(c.t.Schema(id).Clauses)
+		}
+	}
+	return 0, nil
+}
+
+func (c *compiler) metadata(clauses []ast.NodeID) (MetadataID, error) {
+	// NOTE(i4k): Keep the common metadata-free path allocation-free. In particular,
+	// optional is represented on the object field and must not create an
+	// empty metadata value of its own.
+	var attrs []Attribute
+	for _, id := range clauses {
+		if c.t.Node(id).Kind() != ast.Attr {
+			continue
+		}
+		attr := c.t.Attr(id)
+		// optional is represented structurally on object fields and is not
+		// duplicated in the metadata set.
+		if c.t.Text(attr.Name) == "optional" {
+			continue
+		}
+		entry := Attribute{Name: c.a.internString(c.t.Text(attr.Name)), HasValue: attr.HasValue}
+		if attr.HasValue {
+			value, _, err := c.value(attr.Value, false)
+			if err != nil {
+				return 0, c.error(id, err)
+			}
+			entry.Value = value
+		}
+		attrs = append(attrs, entry)
+	}
+	return c.a.internMetadata(attrs), nil
 }
 
 func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {

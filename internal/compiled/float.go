@@ -22,7 +22,7 @@ func (a *Arena) internFloatFormat(format floatFmt) TypeID {
 	if format != f32Fmt && format != f64Fmt {
 		panic("invalid float format")
 	}
-	return a.internRefined(a.real, a.internConstraint(normConstraint{format: format}))
+	return a.internRefined(a.real, a.internConstraint(normConstraint{format: format}), 0)
 }
 
 func (a *Arena) realCanBeFloat(id TypeID, format floatFmt) bool {

@@ -63,3 +63,36 @@ func TestSubtype(t *testing.T) {
 		t.Fatal("required object should be a subtype of optional object")
 	}
 }
+
+func TestMetadataIsPreserved(t *testing.T) {
+	cc := katschema.NewCompiler()
+	withOptions, err := cc.Compile(Object(
+		Field("id", With(String(), Flag("pk"), Attr("owner", StrExpr("ingestion")))),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutOptions, err := cc.Compile(Object(Field("id", String())))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	field, ok := withOptions.Field("id")
+	if !ok {
+		t.Fatal("id field not found")
+	}
+	if got, ok := field.Metadata().Get("pk"); !ok || got != true {
+		t.Fatalf("pk metadata=%v, found=%v", got, ok)
+	}
+	if got, ok := field.Metadata().Get("owner"); !ok || got != "ingestion" {
+		t.Fatalf("owner metadata=%v, found=%v", got, ok)
+	}
+	if withOptions.SemanticFingerprint() != withoutOptions.SemanticFingerprint() {
+		withField, _ := withOptions.Field("id")
+		withoutField, _ := withoutOptions.Field("id")
+		t.Fatalf("metadata should not change semantic fingerprint: got %d and %d, kinds=%v/%v", withOptions.SemanticFingerprint(), withoutOptions.SemanticFingerprint(), withField.Type.Kind(), withoutField.Type.Kind())
+	}
+	if withOptions.DefinitionFingerprint() == withoutOptions.DefinitionFingerprint() {
+		t.Fatal("metadata should change definition fingerprint")
+	}
+}

@@ -4,6 +4,7 @@ type (
 	TypeID       int32
 	StringID     int32
 	ConstraintID int32
+	MetadataID   int32
 	Kind         uint8
 )
 
@@ -92,9 +93,10 @@ const FieldOptional FieldFlags = 1 << 0
 // Field is guaranteed to remain comparable, so Field values may be compared
 // directly using == and !=.
 type Field struct {
-	Name  StringID
-	Value TypeID
-	Flags FieldFlags
+	Name     StringID
+	Value    TypeID
+	Flags    FieldFlags
+	Metadata MetadataID
 }
 
 func (f Field) Optional() bool { return f.Flags&FieldOptional != 0 }
@@ -107,4 +109,5 @@ type range32 struct {
 type refinement struct {
 	base       TypeID
 	constraint ConstraintID
+	metadata   MetadataID
 }

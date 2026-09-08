@@ -119,3 +119,5 @@ func (f FieldView) Name() string {
 
 func (f FieldView) Type() TypeID   { return f.f.Value }
 func (f FieldView) Optional() bool { return f.f.Optional() }
+
+func (f FieldView) Metadata() []Attribute { return f.a.FieldMetadata(f.f) }
