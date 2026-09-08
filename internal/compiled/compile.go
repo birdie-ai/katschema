@@ -295,11 +295,23 @@ func (c *compiler) metadataForValue(id ast.NodeID) (MetadataID, error) {
 	if c.t.Node(id).Kind() != ast.Schema {
 		return 0, nil
 	}
-	return c.metadata(c.t.Schema(id).Clauses)
+	// NOTE(i4k): schema already extracts metadata while compiling the refinement.
+	for _, clause := range c.t.Schema(id).Clauses {
+		if c.t.Node(clause).Kind() != ast.Attr {
+			continue
+		}
+		if c.t.Text(c.t.Attr(clause).Name) != "optional" {
+			return c.metadata(c.t.Schema(id).Clauses)
+		}
+	}
+	return 0, nil
 }
 
 func (c *compiler) metadata(clauses []ast.NodeID) (MetadataID, error) {
-	attrs := make([]Attribute, 0, len(clauses))
+	// NOTE(i4k): Keep the common metadata-free path allocation-free. In particular,
+	// optional is represented on the object field and must not create an
+	// empty metadata value of its own.
+	var attrs []Attribute
 	for _, id := range clauses {
 		if c.t.Node(id).Kind() != ast.Attr {
 			continue

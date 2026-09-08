@@ -24,7 +24,9 @@ func (a *Arena) internMetadata(attrs []Attribute) MetadataID {
 	if len(attrs) == 0 {
 		return 0
 	}
-	attrs = append([]Attribute(nil), attrs...)
+	// NOTE(i4k): attrs is built by the compiler and is not shared with the arena, so it
+	// can be canonicalized in place. We are not copying them here as an optimization!
+	// Have this in mind if individual attr are shared later!
 	sort.Slice(attrs, func(i, j int) bool {
 		return a.StringValue(attrs[i].Name) < a.StringValue(attrs[j].Name)
 	})

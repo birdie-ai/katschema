@@ -392,11 +392,20 @@ func (a *Arena) internObject(fields []Field) TypeID {
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(Object))
 	a.scratch = put32(a.scratch, int32(len(fields)))
+	hasMetadata := false
+	for _, f := range fields {
+		if f.Metadata != 0 {
+			hasMetadata = true
+			break
+		}
+	}
 	for _, f := range fields {
 		a.scratch = putstr(a.scratch, a.StringValue(f.Name))
 		a.scratch = append(a.scratch, byte(f.Flags))
 		a.scratch = putu64(a.scratch, a.Fingerprint(f.Value))
-		a.scratch = putu64(a.scratch, a.metadataFingerprint(f.Metadata))
+		if hasMetadata {
+			a.scratch = putu64(a.scratch, a.metadataFingerprint(f.Metadata))
+		}
 	}
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
