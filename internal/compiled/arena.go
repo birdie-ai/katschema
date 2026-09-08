@@ -42,6 +42,9 @@ type Arena struct {
 	constraintHead  map[uint64]ConstraintID
 	constraintEnums []TypeID
 
+	metadata      []metadata
+	metadataAttrs []Attribute
+
 	// NOTE(i4k): this is only used by tests to force a collision and check if we
 	// are not overriding existing entries in such cases.
 	hash hashFunc
@@ -112,6 +115,7 @@ func (a *Arena) init() {
 	a.constraintHash = append(a.constraintHash, 0)
 	a.constraintNext = append(a.constraintNext, 0)
 	a.constraintHead = make(map[uint64]ConstraintID)
+	a.metadata = append(a.metadata, metadata{})
 
 	a.any = a.internSimple(Any)
 	a.never = a.internSimple(Never)
@@ -255,7 +259,7 @@ func (a *Arena) internInt(v int64) TypeID {
 
 func (a *Arena) internBoundedInt(min TypeID, max TypeID) TypeID {
 	n := normConstraint{ints: intBounds{flags: hasMin | hasMax, min: min, max: max}}
-	return a.internRefined(a.int, a.internConstraint(n))
+	return a.internRefined(a.int, a.internConstraint(n), 0)
 }
 
 func (a *Arena) internRawBigInt(negative bool, mag []byte) TypeID {
@@ -301,7 +305,7 @@ func (a *Arena) internStringAtom(s string) TypeID {
 
 func (a *Arena) internLiteral(base, atom TypeID) TypeID {
 	constraint := a.internConstraint(normConstraint{enum: []TypeID{atom}})
-	return a.internRefined(base, constraint)
+	return a.internRefined(base, constraint, 0)
 }
 
 // Literal returns the scalar atom represented by id.
@@ -392,6 +396,7 @@ func (a *Arena) internObject(fields []Field) TypeID {
 		a.scratch = putstr(a.scratch, a.StringValue(f.Name))
 		a.scratch = append(a.scratch, byte(f.Flags))
 		a.scratch = putu64(a.scratch, a.Fingerprint(f.Value))
+		a.scratch = putu64(a.scratch, a.metadataFingerprint(f.Metadata))
 	}
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
@@ -550,14 +555,15 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 	return a.appendNode(Node{kind: Sum, data: i}, fp, a.hashHead[fp])
 }
 
-func (a *Arena) internRefined(base TypeID, c ConstraintID) TypeID {
-	if c == 0 {
+func (a *Arena) internRefined(base TypeID, c ConstraintID, m MetadataID) TypeID {
+	if c == 0 && m == 0 {
 		return base
 	}
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(Refined))
 	a.scratch = putu64(a.scratch, a.Fingerprint(base))
 	a.scratch = putu64(a.scratch, a.constraintFingerprint(c))
+	a.scratch = putu64(a.scratch, a.metadataFingerprint(m))
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
@@ -565,12 +571,12 @@ func (a *Arena) internRefined(base TypeID, c ConstraintID) TypeID {
 			return false
 		}
 		r := a.refinements[n.data]
-		return r.base == base && r.constraint == c
+		return r.base == base && r.constraint == c && r.metadata == m
 	}); id != 0 {
 		return id
 	}
 	i := int32(len(a.refinements))
-	a.refinements = append(a.refinements, refinement{base: base, constraint: c})
+	a.refinements = append(a.refinements, refinement{base: base, constraint: c, metadata: m})
 	return a.appendNode(Node{kind: Refined, data: i}, fp, a.hashHead[fp])
 }
 

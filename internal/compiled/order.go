@@ -40,6 +40,9 @@ func (x *Arena) Subtype(a, b TypeID) bool {
 	}
 	if bn.kind == Refined {
 		br := x.refinements[bn.data]
+		if br.constraint == 0 {
+			return x.Subtype(a, br.base)
+		}
 		_, isLiteral := x.Literal(a)
 		return isLiteral && x.Subtype(a, br.base) && x.atomSatisfiesConstraint(a, br.constraint)
 	}
