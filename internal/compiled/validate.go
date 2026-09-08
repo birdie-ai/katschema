@@ -228,54 +228,54 @@ func astReal(t *ast.Tree, id ast.NodeID) bool {
 	return ok
 }
 
-func astRealNumber(t *ast.Tree, id ast.NodeID) (decimalNumber, bool) {
+func astRealNumber(t *ast.Tree, id ast.NodeID) (decimal.Number, bool) {
 	switch t.Node(id).Kind() {
 	case ast.Int:
 		raw := t.Int(id)
 		var v big.Int
 		if _, ok := v.SetString(raw, 10); !ok {
-			return decimalNumber{}, false
+			return decimal.Number{}, false
 		}
 		text := v.String()
 		negative := len(text) > 0 && text[0] == '-'
 		if negative {
 			text = text[1:]
 		}
-		return decimalNumber{negative: negative, digits: []byte(text)}, true
+		return decimal.Number{Neg: negative, Digits: []byte(text)}, true
 	case ast.Decimal:
 		parts, err := decimal.Parse([]byte(t.Decimal(id)), nil)
 		if err != nil {
-			return decimalNumber{}, false
+			return decimal.Number{}, false
 		}
-		return decimalNumber{negative: parts.Neg, digits: parts.Digits, exp: parts.Exp}, true
+		return decimal.Number{Neg: parts.Neg, Digits: parts.Digits, Exp: parts.Exp}, true
 	case ast.Schema:
 		s := t.Schema(id)
 		lit, ok := literalValue(t, id)
 		if !ok {
-			return decimalNumber{}, false
+			return decimal.Number{}, false
 		}
 		lk := t.Node(lit).Kind()
 		if lk != ast.Decimal {
-			return decimalNumber{}, false
+			return decimal.Number{}, false
 		}
 		parts, err := decimal.Parse([]byte(t.Decimal(lit)), nil)
 		if err != nil {
-			return decimalNumber{}, false
+			return decimal.Number{}, false
 		}
-		dec := decimalNumber{negative: parts.Neg, digits: parts.Digits, exp: parts.Exp}
+		dec := decimal.Number{Neg: parts.Neg, Digits: parts.Digits, Exp: parts.Exp}
 		switch t.Name(s.Type) {
 		case "float32":
 			if !decimalCanBeFloat(dec, f32Fmt) {
-				return decimalNumber{}, false
+				return decimal.Number{}, false
 			}
 		case "float64":
 			if !decimalCanBeFloat(dec, f64Fmt) {
-				return decimalNumber{}, false
+				return decimal.Number{}, false
 			}
 		}
 		return dec, true
 	default:
-		return decimalNumber{}, false
+		return decimal.Number{}, false
 	}
 }
 
@@ -303,7 +303,7 @@ func isX(t *ast.Tree, id ast.NodeID) bool {
 	return t.Node(id).Kind() == ast.Ident && t.Ident(id) == "x"
 }
 
-func (a *Arena) checkRealNumberBounds(v decimalNumber, flags boundFlags, minID, maxID TypeID) bool {
+func (a *Arena) checkRealNumberBounds(v decimal.Number, flags boundFlags, minID, maxID TypeID) bool {
 	if flags&hasMin != 0 {
 		min, ok := a.realNumber(minID)
 		if !ok {

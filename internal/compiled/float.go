@@ -3,6 +3,8 @@ package compiled
 import (
 	"math"
 	"strconv"
+
+	"github.com/birdie-ai/katschema/math/decimal"
 )
 
 // floatFmt is an intrinsic conversion constraint for a mathematical real.
@@ -28,7 +30,7 @@ func (a *Arena) realCanBeFloat(id TypeID, format floatFmt) bool {
 	return ok && decimalCanBeFloat(v, format)
 }
 
-func decimalCanBeFloat(v decimalNumber, format floatFmt) bool {
+func decimalCanBeFloat(v decimal.Number, format floatFmt) bool {
 	var bits int
 	switch format {
 	case f32Fmt:
@@ -42,6 +44,6 @@ func decimalCanBeFloat(v decimalNumber, format floatFmt) bool {
 	// NOTE(i4k): The conversion is intentionally allowed to be inexact. Comparing the
 	// decimal with the exact binary value would incorrectly reject values such
 	// as 0.1, which are valid inputs for the target IEEE-754 format.
-	parsed, err := strconv.ParseFloat(decimalNumberString(v), bits)
+	parsed, err := strconv.ParseFloat(v.String(), bits)
 	return err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0)
 }
