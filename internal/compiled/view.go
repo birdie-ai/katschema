@@ -76,6 +76,14 @@ func (t Type) Base() TypeID {
 	return t.a.refinements[n.data].base
 }
 
+// Variants returns the members of a sum type. It returns nil for non-sum types.
+func (t Type) Variants() []TypeID {
+	if t.Kind() != Sum {
+		return nil
+	}
+	return append([]TypeID(nil), t.a.sum(t.id)...)
+}
+
 type Fields struct {
 	a *Arena
 	v []Field
@@ -106,9 +114,6 @@ type FieldView struct {
 }
 
 func (f FieldView) Name() string {
-	if f.a == nil {
-		return ""
-	}
 	return f.a.StringValue(f.f.Name)
 }
 
