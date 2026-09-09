@@ -62,8 +62,8 @@ const (
 )
 
 var (
-	ErrValidation  = errors.New("katschema validation")
-	ErrUnknownType = compiled.ErrUnknownType
+	ErrValidation   = errors.New("katschema validation")
+	ErrUnknownType  = compiled.ErrUnknownType
 	ErrResolveCycle = compiled.ErrResolveCycle
 )
 
@@ -249,6 +249,19 @@ func (m Metadata) Has(name string) bool {
 // SubtypeOf reports whether every value accepted by t is accepted by other.
 func (t Type) SubtypeOf(other Type) bool {
 	return t.arena.Subtype(t.id, other.id)
+}
+
+// Overlay returns the effective object type formed by placing top over t.
+// Both types must belong to the same compiler and be objects.
+func (t Type) Overlay(top Type) (Type, error) {
+	if t.arena != top.arena {
+		return Type{}, fmt.Errorf("overlay types belong to different compilers")
+	}
+	id, err := t.arena.Overlay(t.id, top.id)
+	if err != nil {
+		return Type{}, err
+	}
+	return Type{arena: t.arena, id: id}, nil
 }
 
 // Validate reports whether value is accepted by the the compiled type.
