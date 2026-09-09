@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/birdie-ai/katschema"
+	"github.com/birdie-ai/katschema/ks"
 	. "github.com/birdie-ai/katschema/ks"
 )
 
@@ -47,6 +48,62 @@ func TestValidate(t *testing.T) {
 	}
 	if err := typ.Validate(Object(Field("id", LitInt(1)))); err == nil {
 		t.Fatal("invalid value accepted")
+	}
+}
+
+func TestTraverse(t *testing.T) {
+	typ, err := katschema.Compile(ks.List(ks.Object(
+		ks.Field("nested", ks.With(
+			ks.Object(ks.Field("value", ks.String())),
+			ks.Attr("search.marker", ks.BoolExpr(true)),
+		)),
+	)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := typ.Traverse(katschema.Path{"nested", "value"})
+	if !ok {
+		t.Fatal("Traverse returned no type")
+	}
+	if got.Kind() != katschema.String {
+		t.Fatalf("resolved kind = %v, want %v", got.Kind(), katschema.String)
+	}
+	if _, ok := typ.Traverse(katschema.Path{"nested", "missing"}); ok {
+		t.Fatal("Traverse found a missing field")
+	}
+
+	literal, err := katschema.Compile(ks.List(ks.LitString("a"), ks.LitString("b")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if literal.Kind() != katschema.Tuple {
+		t.Fatalf("literal list kind = %v, want tuple", literal.Kind())
+	}
+	if got, ok := literal.Traverse(nil); !ok || got.Kind() != katschema.Tuple {
+		t.Fatalf("empty path changed literal list type: %v, found=%v", got.Kind(), ok)
+	}
+	if _, ok := literal.Traverse(katschema.Path{"value"}); ok {
+		t.Fatal("Traverse traversed a literal list as a schema list")
+	}
+
+	object, err := katschema.Compile(ks.Object(
+		ks.Field("a", ks.LitInt(1)),
+		ks.Field("b", ks.Object(ks.Field("c", ks.LitInt(1)))),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok = object.Traverse(katschema.Path{"b", "c"})
+	if !ok {
+		t.Fatal("Traverse returned no literal field")
+	}
+	one, err := katschema.Compile(ks.LitInt(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SemanticFingerprint() != one.SemanticFingerprint() {
+		t.Fatalf("literal field fingerprint = %d, want %d", got.SemanticFingerprint(), one.SemanticFingerprint())
 	}
 }
 
