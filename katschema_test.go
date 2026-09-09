@@ -1,6 +1,7 @@
 package katschema_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/birdie-ai/katschema"
@@ -94,5 +95,93 @@ func TestMetadataIsPreserved(t *testing.T) {
 	}
 	if withOptions.DefinitionFingerprint() == withoutOptions.DefinitionFingerprint() {
 		t.Fatal("metadata should change definition fingerprint")
+	}
+}
+
+func TestResolver(t *testing.T) {
+	resolverCalls := 0
+	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+		resolverCalls++
+		if name != "analyzed" {
+			return katschema.TypeResolution{}, katschema.ErrUnknownType
+		}
+		return katschema.TypeResolution{Value: With(
+			Sum(
+				String(),
+				Object(
+					Field("en", Optional(String())),
+					Field("und", Optional(String())),
+				),
+			),
+			Attr("search.logical_type", StrExpr("analyzed")),
+		), CacheKey: "global:analyzed"}, nil
+	})
+	compiler := katschema.NewCompilerWithResolver(resolver)
+	typ, err := compiler.Compile(Type("analyzed"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, ok := typ.Base()
+	if typ.Kind() != katschema.Refined || !ok || base.Kind() != katschema.Sum || len(base.Variants()) != 2 {
+		t.Fatalf("resolved analyzed type=%v, base=%v, variants=%d", typ.Kind(), base.Kind(), len(base.Variants()))
+	}
+	if got, ok := typ.Metadata().Get("search.logical_type"); !ok || got != "analyzed" {
+		t.Fatalf("logical type metadata=%v, found=%v", got, ok)
+	}
+	if _, err := compiler.Compile(Type("analyzed")); err != nil {
+		t.Fatal(err)
+	}
+	if resolverCalls != 2 {
+		t.Fatalf("resolver calls=%d, want one call per compile to obtain the scope key", resolverCalls)
+	}
+	optionalField, err := compiler.Compile(Object(Field("custom_fields", Optional(Type("analyzed")))))
+	if err != nil {
+		t.Fatalf("optional resolved field: %v", err)
+	}
+	field, ok := optionalField.Field("custom_fields")
+	if !ok || !field.Optional {
+		t.Fatalf("optional resolved field=%+v, found=%v", field, ok)
+	}
+
+	customer := "abc"
+	customerCompiler := katschema.NewCompilerWithResolver(katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+		return katschema.TypeResolution{
+			Value:    With(String(), Attr("customer", StrExpr(customer))),
+			CacheKey: "custom_fields:" + customer,
+		}, nil
+	}))
+	abc, err := customerCompiler.Compile(Type("custom_fields"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	customer = "xyz"
+	xyz, err := customerCompiler.Compile(Type("custom_fields"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if abc.DefinitionFingerprint() == xyz.DefinitionFingerprint() {
+		t.Fatal("customer-scoped cache keys must not reuse another customer's definition")
+	}
+
+	_, err = katschema.CompileWithResolver(Type("missing"), resolver)
+	if err == nil || !errors.Is(err, katschema.ErrUnknownType) {
+		t.Fatalf("missing type error=%v, want ErrUnknownType", err)
+	}
+}
+
+func TestResolverRejectsRecursion(t *testing.T) {
+	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+		return katschema.TypeResolution{Value: Type(map[string]string{"a": "b", "b": "a"}[name])}, nil
+	})
+	_, err := katschema.CompileWithResolver(Type("a"), resolver)
+	if err == nil || !errors.Is(err, katschema.ErrResolveCycle) {
+		t.Fatalf("recursive resolver error=%v", err)
+	}
+}
+
+func TestUnknownTypeFromCompiler(t *testing.T) {
+	_, err := katschema.Compile(Type("missing"))
+	if err == nil || !errors.Is(err, katschema.ErrUnknownType) {
+		t.Fatalf("unknown type error=%v, want ErrUnknownType", err)
 	}
 }
