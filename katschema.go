@@ -20,6 +20,10 @@ type (
 		id    compiled.TypeID
 	}
 
+	// Path is a field path through a compiled value.
+	//   Path{"accounts", "id"} means `accounts.id`.
+	Path []string
+
 	// Field represents one object field.
 	Field struct {
 		Name     string
@@ -206,6 +210,53 @@ func (t Type) Base() (Type, bool) {
 		return Type{}, false
 	}
 	return Type{arena: t.arena, id: id}, true
+}
+
+// Traverse returns the compiled type at path.
+// The path has the same semantics as "dot traversal" in many languages but here decoded
+// in the Path type (list of strings).
+// It has the same common semantics for object but when traversing over lists it has a
+// special behavior of unwrapping the list element type transparently.
+// Example: if the object is:
+//
+//	{
+//	  "a": [
+//	    {"b": 1}
+//	  ],
+//	  "c": {
+//	    "d": 1
+//	  }
+//	}
+//
+// Then `a.b` and `c.d` both return 1.
+func (t Type) Traverse(path Path) (Type, bool) {
+	for _, name := range path {
+		for {
+			base, ok := t.Base()
+			if !ok {
+				break
+			}
+			t = base
+		}
+		if element, ok := t.Element(); ok {
+			// Element is defined only for schema lists. Literal arrays are
+			// compiled as tuples and must not be traversed as collections.
+			t = element
+			for {
+				base, ok := t.Base()
+				if !ok {
+					break
+				}
+				t = base
+			}
+		}
+		field, ok := t.Field(name)
+		if !ok {
+			return Type{}, false
+		}
+		t = field.Type
+	}
+	return t, true
 }
 
 // Fingerprint returns the canonical identity of the compiled semantic type.
