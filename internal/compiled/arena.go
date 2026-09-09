@@ -1,6 +1,7 @@
 package compiled
 
 import (
+	"fmt"
 	"math"
 	"math/big"
 	"sort"
@@ -423,6 +424,30 @@ func (a *Arena) internObject(fields []Field) TypeID {
 	i := int32(len(a.objects))
 	a.objects = append(a.objects, r)
 	return a.appendNode(Node{kind: Object, data: i}, fp, a.hashHead[fp])
+}
+
+// Overlay returns the effective object type formed by placing top over base.
+// The top field definition replaces a field with the same name in base.
+func (a *Arena) Overlay(base, top TypeID) (TypeID, error) {
+	if a.Node(base).kind != Object || a.Node(top).kind != Object {
+		return 0, fmt.Errorf("overlay operands must be objects")
+	}
+
+	fields := append([]Field(nil), a.objectFields(base)...)
+	for _, topField := range a.objectFields(top) {
+		found := false
+		for i, field := range fields {
+			if field.Name == topField.Name {
+				fields[i] = topField
+				found = true
+				break
+			}
+		}
+		if !found {
+			fields = append(fields, topField)
+		}
+	}
+	return a.internObject(fields), nil
 }
 
 func (a *Arena) internSum(members [2]TypeID) TypeID {

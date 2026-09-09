@@ -65,6 +65,65 @@ func TestSubtype(t *testing.T) {
 	}
 }
 
+func TestOverlay(t *testing.T) {
+	cc := katschema.NewCompiler()
+	base, err := cc.Compile(Object(
+		Field("id", With(String(), Flag("pk"))),
+		Field("text", Optional(String())),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	top, err := cc.Compile(Object(
+		Field("custom_fields", Object(Field("priority", Int()))),
+		Field("text", String()),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	typ, err := base.Overlay(top)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := typ.Fields()
+	if len(fields) != 3 || fields[0].Name != "custom_fields" || fields[1].Name != "id" || fields[2].Name != "text" {
+		t.Fatalf("fields=%v, want canonical overlay fields", fields)
+	}
+	text, ok := typ.Field("text")
+	if !ok || text.Optional {
+		t.Fatalf("text=%+v, found=%v; top layer should replace the core field", text, ok)
+	}
+	id, ok := typ.Field("id")
+	if !ok {
+		t.Fatal("id field not found")
+	}
+	if got, ok := id.Metadata().Get("pk"); !ok || got != true {
+		t.Fatalf("id metadata=%v, found=%v", got, ok)
+	}
+
+	valid := Object(
+		Field("id", LitString("one")),
+		Field("text", LitString("hello")),
+		Field("custom_fields", Object(Field("priority", LitInt(1)))),
+	)
+	if err := typ.Validate(valid); err != nil {
+		t.Fatalf("valid overlay value rejected: %v", err)
+	}
+	if err := typ.Validate(Object(
+		Field("id", LitString("one")),
+		Field("text", LitInt(1)),
+		Field("custom_fields", Object(Field("priority", LitInt(1)))),
+	)); err == nil {
+		t.Fatal("invalid overlay value accepted")
+	}
+
+	nested, err := typ.Overlay(top)
+	if err != nil || nested.SemanticFingerprint() != typ.SemanticFingerprint() {
+		t.Fatalf("nested overlay = %v, want equivalent effective type", err)
+	}
+}
+
 func TestMetadataIsPreserved(t *testing.T) {
 	cc := katschema.NewCompiler()
 	withOptions, err := cc.Compile(Object(
@@ -183,5 +242,28 @@ func TestUnknownTypeFromCompiler(t *testing.T) {
 	_, err := katschema.Compile(Type("missing"))
 	if err == nil || !errors.Is(err, katschema.ErrUnknownType) {
 		t.Fatalf("unknown type error=%v, want ErrUnknownType", err)
+	}
+}
+
+func TestResolverPreservesConstrainedType(t *testing.T) {
+	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+		if name != "language" {
+			return katschema.TypeResolution{}, katschema.ErrUnknownType
+		}
+		return katschema.TypeResolution{Value: With(
+			String(),
+			Check(Binary(X(), In, ListExpr(LitString("en"), LitString("pt")))),
+			Flag("logical"),
+		)}, nil
+	})
+	typ, err := katschema.CompileWithResolver(Object(Field("language", Type("language"))), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := typ.Validate(Object(Field("language", LitString("en")))); err != nil {
+		t.Fatalf("valid language rejected: %v", err)
+	}
+	if err := typ.Validate(Object(Field("language", LitString("de")))); err == nil {
+		t.Fatal("invalid language accepted")
 	}
 }

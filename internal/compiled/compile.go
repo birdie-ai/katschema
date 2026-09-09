@@ -19,7 +19,7 @@ type CompileError struct {
 var (
 	ErrOptionalUnexpected = errors.New("optional is only valid in the object field")
 	ErrUnknownType        = errors.New("unknown type")
-	ErrResolveCycle = errors.New("cycle detection when resolving type")
+	ErrResolveCycle       = errors.New("cycle detection when resolving type")
 )
 
 // TypeResolver expands a non-builtin named type into an AST definition.
@@ -292,8 +292,8 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 			initial = c.a.realConstraintNorm(r.constraint)
 		default:
 			// Metadata-only refinements are transparent. Preserve the base and
-			// reject only constraints that this normalizer cannot merge.
-			if r.constraint != 0 {
+			// reject only additional constraints that this normalizer cannot merge.
+			if r.constraint != 0 && hasConstraintClause(c.t, s.Clauses) {
 				return 0, false, c.errorf(id, "cannot refine %s with additional constraints", c.a.Node(r.base).kind)
 			}
 		}
@@ -318,6 +318,15 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 		return 0, false, err
 	}
 	return c.a.internRefined(base, constraint, metadata), optional, nil
+}
+
+func hasConstraintClause(t *ast.Tree, clauses []ast.NodeID) bool {
+	for _, id := range clauses {
+		if t.Node(id).Kind() == ast.Constraint {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *compiler) metadataForValue(id ast.NodeID) (MetadataID, error) {
