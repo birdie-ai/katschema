@@ -36,8 +36,12 @@ type (
 
 	// Compiler owns the canonical type used by a group of related compilations.
 	// NOTE(i4k): Types compiled by different compiler instances **cannot** be used together!
+	// Compiler is not safe for concurrent Compile calls; synchronize reuse or
+	// give each concurrent request its own compiler.
 	Compiler struct {
-		arena *compiled.Arena
+		arena    *compiled.Arena
+		resolver TypeResolver
+		resolved map[string]compiled.TypeID
 	}
 )
 
@@ -58,16 +62,50 @@ const (
 )
 
 var (
-	ErrValidation = errors.New("katschema validation")
+	ErrValidation  = errors.New("katschema validation")
+	ErrUnknownType = compiled.ErrUnknownType
+	ErrResolveCycle = compiled.ErrResolveCycle
 )
+
+// TypeResolver resolves names that are not Katschema builtins. Returning
+// ErrUnknownType indicates that the name is not defined.
+type TypeResolver interface {
+	Resolve(name string) (TypeResolution, error)
+}
+
+// TypeResolution is the result of resolving a user-defined type. CacheKey
+// identifies the definition's scope; it may include a tenant or request
+// identity when the same logical name has different definitions.
+type TypeResolution struct {
+	Value    ks.Value
+	CacheKey string
+}
+
+// ResolverFunc adapts a function to TypeResolver.
+type ResolverFunc func(name string) (TypeResolution, error)
+
+func (f ResolverFunc) Resolve(name string) (TypeResolution, error) { return f(name) }
 
 func NewCompiler() *Compiler {
 	return &Compiler{arena: compiled.NewArena()}
 }
 
+// TODO(i4k): introduce a CompilerOption because it seems we will need to configure a lot
+// this compiler.
+
+// NewCompilerWithResolver creates a compiler that expands user-defined names.
+func NewCompilerWithResolver(resolver TypeResolver) *Compiler {
+	return &Compiler{arena: compiled.NewArena(), resolver: resolver, resolved: make(map[string]compiled.TypeID)}
+}
+
 // Compile compiles a Katschema value into an immutable semantic type.
 func Compile(value ks.Value) (Type, error) {
 	return NewCompiler().Compile(value)
+}
+
+// CompileWithResolver compiles a value using a resolver for non-builtin names.
+func CompileWithResolver(value ks.Value, resolver TypeResolver) (Type, error) {
+	return NewCompilerWithResolver(resolver).Compile(value)
 }
 
 func (c *Compiler) Compile(value ks.Value) (Type, error) {
@@ -76,7 +114,18 @@ func (c *Compiler) Compile(value ks.Value) (Type, error) {
 		return Type{}, err
 	}
 
-	id, err := compiled.Compile(c.arena, tree, root)
+	resolve := compiled.TypeResolver(nil)
+	if c.resolver != nil {
+		resolve = func(name string) (compiled.ResolvedType, error) {
+			resolution, err := c.resolver.Resolve(name)
+			if err != nil {
+				return compiled.ResolvedType{}, err
+			}
+			tree, root, err := ks.Build(resolution.Value)
+			return compiled.ResolvedType{Tree: tree, Root: root, CacheKey: resolution.CacheKey}, err
+		}
+	}
+	id, err := compiled.CompileWithResolver(c.arena, tree, root, resolve, c.resolved)
 	if err != nil {
 		return Type{}, err
 	}

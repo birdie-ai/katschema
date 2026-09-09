@@ -16,14 +16,36 @@ type CompileError struct {
 	Err  error
 }
 
-var ErrOptionalUnexpected = errors.New("optional is only valid in the object field")
+var (
+	ErrOptionalUnexpected = errors.New("optional is only valid in the object field")
+	ErrUnknownType        = errors.New("unknown type")
+	ErrResolveCycle = errors.New("cycle detection when resolving type")
+)
+
+// TypeResolver expands a non-builtin named type into an AST definition.
+// Implementations must not mutate shared compiler or resolver state.
+// The CacheKey is optional and is only useful in the case the user has "dynamic"
+// type resolution, one such example could be a type that has different shape per
+// customer. If not used, the type name is used as key.
+type ResolvedType struct {
+	Tree     *ast.Tree
+	Root     ast.NodeID
+	CacheKey string
+}
+
+type TypeResolver func(name string) (ResolvedType, error)
 
 func (e *CompileError) Error() string { return fmt.Sprintf("compile: %s", e.Err.Error()) }
+func (e *CompileError) Unwrap() error { return e.Err }
 
 // Compile lowers root into a canonical semantic type in the arena.
 func Compile(a *Arena, t *ast.Tree, root ast.NodeID) (TypeID, error) {
+	return CompileWithResolver(a, t, root, nil, nil)
+}
+
+func CompileWithResolver(a *Arena, t *ast.Tree, root ast.NodeID, resolve TypeResolver, cache map[string]TypeID) (TypeID, error) {
 	a.init()
-	c := compiler{a: a, t: t}
+	c := compiler{a: a, t: t, resolve: resolve, resolving: make(map[string]bool), resolved: cache}
 	id, optional, err := c.value(root, false)
 	if err != nil {
 		return 0, err
@@ -44,8 +66,11 @@ func Compile(a *Arena, t *ast.Tree, root ast.NodeID) (TypeID, error) {
 }
 
 type compiler struct {
-	a *Arena
-	t *ast.Tree
+	a         *Arena
+	t         *ast.Tree
+	resolve   TypeResolver
+	resolving map[string]bool // used for cycle-detection.
+	resolved  map[string]TypeID
 }
 
 func (c *compiler) errorf(id ast.NodeID, format string, args ...any) error {
@@ -258,15 +283,19 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	initial := normConstraint{}
 	if n := c.a.Node(base); n.kind == Refined {
 		r := c.a.refinements[n.data]
-		base = r.base
 		switch c.a.Node(r.base).kind {
 		case Int:
+			base = r.base
 			initial = c.a.intConstraintNorm(r.constraint)
 		case Real:
+			base = r.base
 			initial = c.a.realConstraintNorm(r.constraint)
 		default:
-			// TODO(i4k): finish this
-			panic("still unsupported refining refinements other than (int) and (real)")
+			// Metadata-only refinements are transparent. Preserve the base and
+			// reject only constraints that this normalizer cannot merge.
+			if r.constraint != 0 {
+				return 0, false, c.errorf(id, "cannot refine %s with additional constraints", c.a.Node(r.base).kind)
+			}
 		}
 	}
 
@@ -374,7 +403,48 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 		case "float64", "float":
 			return c.a.Float64(), nil
 		default:
-			return 0, c.errorf(id, "unresolved type %q", c.t.Name(id))
+			name := c.t.Name(id)
+			if c.resolve == nil {
+				return 0, c.errorf(id, "%w %q", ErrUnknownType, name)
+			}
+			if c.resolving[name] {
+				return 0, c.errorf(id, "%w: name %q", ErrResolveCycle, name)
+			}
+			resolution, err := c.resolve(name)
+			if err != nil {
+				return 0, c.error(id, err)
+			}
+			cacheKey := resolution.CacheKey
+			if cacheKey == "" {
+				cacheKey = name
+			}
+			if c.resolved != nil {
+				if resolved, ok := c.resolved[cacheKey]; ok {
+					return resolved, nil
+				}
+			}
+			if resolution.Tree == nil || resolution.Root == 0 {
+				return 0, c.errorf(id, "%w %q", ErrUnknownType, name)
+			}
+			c.resolving[cacheKey] = true
+
+			// TODO(i4k): This is hacky, we are in hurry... somehow it should be possible to
+			// invoke a standalone compiler providing an arbitrary tree.
+			previousTree := c.t
+			c.t = resolution.Tree
+			resolved, optional, compileErr := c.value(resolution.Root, false)
+			c.t = previousTree
+			delete(c.resolving, cacheKey)
+			if compileErr != nil {
+				return 0, compileErr
+			}
+			if optional {
+				return 0, c.errorf(id, "resolved type %q cannot be optional", name)
+			}
+			if c.resolved != nil {
+				c.resolved[cacheKey] = resolved
+			}
+			return resolved, nil
 		}
 	case ast.List:
 		elems := c.t.List(id)
@@ -391,6 +461,8 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 		return c.a.internList(elem), nil
 	case ast.Object:
 		return c.object(id)
+	case ast.Sum:
+		return c.sum(id)
 	case ast.Path:
 		return 0, c.errorf(id, "type paths require a resolver")
 	default:
