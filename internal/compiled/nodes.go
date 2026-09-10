@@ -110,4 +110,5 @@ type refinement struct {
 	base       TypeID
 	constraint ConstraintID
 	metadata   MetadataID
+	name       StringID
 }

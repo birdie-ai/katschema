@@ -22,7 +22,8 @@ var (
 	ErrResolveCycle       = errors.New("cycle detection when resolving type")
 )
 
-// TypeResolver expands a non-builtin named type into an AST definition.
+// TypeResolver expands a non-builtin named type into an AST definition. Name
+// is an optional name for the resolved refinement.
 // Implementations must not mutate shared compiler or resolver state.
 // The CacheKey is optional and is only useful in the case the user has "dynamic"
 // type resolution, one such example could be a type that has different shape per
@@ -30,6 +31,7 @@ var (
 type ResolvedType struct {
 	Tree     *ast.Tree
 	Root     ast.NodeID
+	Name     string
 	CacheKey string
 }
 
@@ -282,9 +284,11 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	// refinement.
 	initial := normConstraint{}
 	var inheritedMetadata MetadataID
+	var inheritedName StringID
 	if n := c.a.Node(base); n.kind == Refined {
 		r := c.a.refinements[n.data]
 		inheritedMetadata = r.metadata
+		inheritedName = r.name
 		switch c.a.Node(r.base).kind {
 		case Int:
 			base = r.base
@@ -323,7 +327,7 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 		return 0, false, err
 	}
 	metadata = c.a.mergeMetadata(inheritedMetadata, metadata)
-	return c.a.internRefined(base, constraint, metadata), optional, nil
+	return c.a.internRefinedNamed(base, constraint, metadata, inheritedName), optional, nil
 }
 
 func hasConstraintClause(t *ast.Tree, clauses []ast.NodeID) bool {
@@ -455,6 +459,9 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 			}
 			if optional {
 				return 0, c.errorf(id, "resolved type %q cannot be optional", name)
+			}
+			if resolution.Name != "" {
+				resolved = c.a.withRefinedName(resolved, resolution.Name)
 			}
 			if c.resolved != nil {
 				c.resolved[cacheKey] = resolved
