@@ -12,6 +12,8 @@ import (
 // NOTE(i4k): just smoke tests checking if public API "works".
 
 func TestCompile(t *testing.T) {
+	t.Parallel()
+
 	typ, err := katschema.Compile(Object(
 		Field("id", String()),
 		Field("tags", Optional(List(String()))),
@@ -35,6 +37,8 @@ func TestCompile(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
+	t.Parallel()
+
 	typ, err := katschema.Compile(Object(
 		Field("id", String()),
 		Field("age", Optional(Int())),
@@ -52,6 +56,8 @@ func TestValidate(t *testing.T) {
 }
 
 func TestTraverse(t *testing.T) {
+	t.Parallel()
+
 	typ, err := katschema.Compile(ks.List(ks.Object(
 		ks.Field("nested", ks.With(
 			ks.Object(ks.Field("value", ks.String())),
@@ -108,6 +114,8 @@ func TestTraverse(t *testing.T) {
 }
 
 func TestSubtype(t *testing.T) {
+	t.Parallel()
+
 	compiler := katschema.NewCompiler()
 	required, err := compiler.Compile(Object(Field("id", String())))
 	if err != nil {
@@ -123,6 +131,8 @@ func TestSubtype(t *testing.T) {
 }
 
 func TestOverlay(t *testing.T) {
+	t.Parallel()
+
 	cc := katschema.NewCompiler()
 	base, err := cc.Compile(Object(
 		Field("id", With(String(), Flag("pk"))),
@@ -182,6 +192,8 @@ func TestOverlay(t *testing.T) {
 }
 
 func TestMetadataIsPreserved(t *testing.T) {
+	t.Parallel()
+
 	cc := katschema.NewCompiler()
 	withOptions, err := cc.Compile(Object(
 		Field("id", With(String(), Flag("pk"), Attr("owner", StrExpr("ingestion")))),
@@ -215,6 +227,8 @@ func TestMetadataIsPreserved(t *testing.T) {
 }
 
 func TestResolver(t *testing.T) {
+	t.Parallel()
+
 	resolverCalls := 0
 	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
 		resolverCalls++
@@ -230,7 +244,7 @@ func TestResolver(t *testing.T) {
 				),
 			),
 			Attr("some.app.marker", StrExpr("analyzed")),
-		), CacheKey: "global:analyzed"}, nil
+		), Name: "analyzed", CacheKey: "global:analyzed"}, nil
 	})
 	compiler := katschema.NewCompilerWithResolver(resolver)
 	typ, err := compiler.Compile(Type("analyzed"))
@@ -243,6 +257,9 @@ func TestResolver(t *testing.T) {
 	}
 	if got, ok := typ.Metadata().Get("some.app.marker"); !ok || got != "analyzed" {
 		t.Fatalf("logical type metadata=%v, found=%v", got, ok)
+	}
+	if got := typ.Name(); got != "analyzed" {
+		t.Fatalf("resolved type name=%q, want analyzed", got)
 	}
 	if _, err := compiler.Compile(Type("analyzed")); err != nil {
 		t.Fatal(err)
@@ -264,6 +281,9 @@ func TestResolver(t *testing.T) {
 	}
 	if got, ok := field.Type.Metadata().Get("some.app.marker"); !ok || got != "analyzed" {
 		t.Fatalf("wrapped resolved logical type metadata=%v, found=%v", got, ok)
+	}
+	if got := field.Type.Name(); got != "analyzed" {
+		t.Fatalf("wrapped resolved type name=%q, want analyzed", got)
 	}
 	if got, ok := field.Type.Metadata().Get("mapping"); !ok || got != "custom_fields" {
 		t.Fatalf("wrapped resolved mapping metadata=%v, found=%v", got, ok)
@@ -295,7 +315,63 @@ func TestResolver(t *testing.T) {
 	}
 }
 
+func TestTypeNameIsOptionalAndNotSemantic(t *testing.T) {
+	t.Parallel()
+
+	// NOTE(i4k): this is not the right way of defining a resolver.
+	// For testing purposes this wraps every non-builtin name with a test constraint.
+	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+		return katschema.TypeResolution{
+			Value: With(Int(), Check(Binary(X(), Gt, IntExpr(0)))),
+			Name:  name,
+		}, nil
+	})
+	compiler := katschema.NewCompilerWithResolver(resolver)
+
+	positiveInt, err := compiler.Compile(Type("positive_int"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := positiveInt.Name(); got != "positive_int" {
+		t.Fatalf("resolved type name=%q, want positive_int", got)
+	}
+	bounded, err := compiler.Compile(With(
+		Type("positive_int"),
+		Check(Binary(X(), Lt, IntExpr(100))),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := bounded.Name(); got != "positive_int" {
+		t.Fatalf("refined resolved type name=%q, want positive_int", got)
+	}
+
+	score, err := compiler.Compile(Type("score"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := score.Name(); got != "score" {
+		t.Fatalf("resolved type name=%q, want score", got)
+	}
+	if positiveInt.SemanticFingerprint() != score.SemanticFingerprint() {
+		t.Fatal("type names changed semantic identity")
+	}
+	if positiveInt.DefinitionFingerprint() == score.DefinitionFingerprint() {
+		t.Fatal("different type names share definition identity")
+	}
+
+	unnamed, err := katschema.Compile(With(Int(), Check(Binary(X(), Gt, IntExpr(0)))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unnamed.Name(); got != "" {
+		t.Fatalf("unnamed refinement name=%q, want empty", got)
+	}
+}
+
 func TestResolverRejectsRecursion(t *testing.T) {
+	t.Parallel()
+
 	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
 		return katschema.TypeResolution{Value: Type(map[string]string{"a": "b", "b": "a"}[name])}, nil
 	})
@@ -306,6 +382,8 @@ func TestResolverRejectsRecursion(t *testing.T) {
 }
 
 func TestUnknownTypeFromCompiler(t *testing.T) {
+	t.Parallel()
+
 	_, err := katschema.Compile(Type("missing"))
 	if err == nil || !errors.Is(err, katschema.ErrUnknownType) {
 		t.Fatalf("unknown type error=%v, want ErrUnknownType", err)
@@ -313,6 +391,8 @@ func TestUnknownTypeFromCompiler(t *testing.T) {
 }
 
 func TestResolverPreservesConstrainedType(t *testing.T) {
+	t.Parallel()
+
 	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
 		if name != "language" {
 			return katschema.TypeResolution{}, katschema.ErrUnknownType

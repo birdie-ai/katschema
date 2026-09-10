@@ -77,11 +77,13 @@ type TypeResolver interface {
 	Resolve(name string) (TypeResolution, error)
 }
 
-// TypeResolution is the result of resolving a user-defined type. CacheKey
-// identifies the definition's scope; it may include a tenant or request
-// identity when the same logical name has different definitions.
+// TypeResolution is the result of resolving a user-defined type. Name is an
+// optional name for the resolved type. CacheKey identifies the definition's
+// scope; it may include a tenant or request identity when the same logical
+// name has different definitions.
 type TypeResolution struct {
 	Value    ks.Value
+	Name     string
 	CacheKey string
 }
 
@@ -126,7 +128,7 @@ func (c *Compiler) Compile(value ks.Value) (Type, error) {
 				return compiled.ResolvedType{}, err
 			}
 			tree, root, err := ks.Build(resolution.Value)
-			return compiled.ResolvedType{Tree: tree, Root: root, CacheKey: resolution.CacheKey}, err
+			return compiled.ResolvedType{Tree: tree, Root: root, Name: resolution.Name, CacheKey: resolution.CacheKey}, err
 		}
 	}
 	id, err := compiled.CompileWithResolver(c.arena, tree, root, resolve, c.resolved)
@@ -139,6 +141,15 @@ func (c *Compiler) Compile(value ks.Value) (Type, error) {
 // Kind returns the semantic kind of the type.
 func (t Type) Kind() Kind {
 	return t.view().Kind()
+}
+
+// Name returns the optional name attached to a refined type. Unnamed
+// refinements and non-refined types return the empty string.
+func (t Type) Name() string {
+	if t.arena == nil {
+		return ""
+	}
+	return t.arena.TypeName(t.id)
 }
 
 // Element returns the element type of a list.

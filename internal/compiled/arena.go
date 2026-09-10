@@ -183,6 +183,14 @@ func (a *Arena) StringValue(id StringID) string {
 	return a.strings[id]
 }
 
+func (a *Arena) TypeName(id TypeID) string {
+	n := a.Node(id)
+	if n.kind != Refined || n.data <= 0 || int(n.data) >= len(a.refinements) {
+		return ""
+	}
+	return a.StringValue(a.refinements[n.data].name)
+}
+
 func (a *Arena) internString(s string) StringID {
 	if id := a.stringIndex[s]; id != 0 {
 		return id
@@ -590,14 +598,35 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 }
 
 func (a *Arena) internRefined(base TypeID, c ConstraintID, m MetadataID) TypeID {
+	return a.internRefinedNamed(base, c, m, 0)
+}
+
+func (a *Arena) withRefinedName(id TypeID, name string) TypeID {
+	if name == "" {
+		panic("unreachable")
+	}
+	nameID := a.internString(name)
+	if n := a.Node(id); n.kind == Refined {
+		r := a.refinements[n.data]
+		return a.internRefinedNamed(r.base, r.constraint, r.metadata, nameID)
+	}
+	return a.internRefinedNamed(id, 0, 0, nameID)
+}
+
+func (a *Arena) internRefinedNamed(base TypeID, c ConstraintID, m MetadataID, name StringID) TypeID {
 	if c == 0 && m == 0 {
-		return base
+		if name == 0 {
+			return base
+		}
 	}
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(Refined))
 	a.scratch = putu64(a.scratch, a.Fingerprint(base))
 	a.scratch = putu64(a.scratch, a.constraintFingerprint(c))
 	a.scratch = putu64(a.scratch, a.metadataFingerprint(m))
+	if name != 0 {
+		a.scratch = putstr(a.scratch, a.StringValue(name))
+	}
 	fp := a.hash(a.scratch)
 	if id := a.find(fp, func(id TypeID) bool {
 		n := a.nodes[id]
@@ -605,12 +634,12 @@ func (a *Arena) internRefined(base TypeID, c ConstraintID, m MetadataID) TypeID 
 			return false
 		}
 		r := a.refinements[n.data]
-		return r.base == base && r.constraint == c && r.metadata == m
+		return r.base == base && r.constraint == c && r.metadata == m && r.name == name
 	}); id != 0 {
 		return id
 	}
 	i := int32(len(a.refinements))
-	a.refinements = append(a.refinements, refinement{base: base, constraint: c, metadata: m})
+	a.refinements = append(a.refinements, refinement{base: base, constraint: c, metadata: m, name: name})
 	return a.appendNode(Node{kind: Refined, data: i}, fp, a.hashHead[fp])
 }
 
