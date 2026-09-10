@@ -48,6 +48,33 @@ func (a *Arena) internMetadata(attrs []Attribute) MetadataID {
 	return id
 }
 
+// mergeMetadata combines metadata from a resolved type with metadata declared
+// on the reference that uses it. Attributes on the reference take precedence.
+func (a *Arena) mergeMetadata(base, overlay MetadataID) MetadataID {
+	if base == 0 {
+		return overlay
+	}
+	if overlay == 0 {
+		return base
+	}
+
+	merged := append([]Attribute(nil), a.metadataAttrsFor(base)...)
+	for _, attr := range a.metadataAttrsFor(overlay) {
+		found := false
+		for i := range merged {
+			if merged[i].Name == attr.Name {
+				merged[i] = attr
+				found = true
+				break
+			}
+		}
+		if !found {
+			merged = append(merged, attr)
+		}
+	}
+	return a.internMetadata(merged)
+}
+
 func (a *Arena) metadataAttrsFor(id MetadataID) []Attribute {
 	if id <= 0 || int(id) >= len(a.metadata) {
 		return nil
