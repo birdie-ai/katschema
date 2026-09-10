@@ -281,8 +281,10 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	// So here we need to pull their intrinsic range into the same normalizer of this schema
 	// refinement.
 	initial := normConstraint{}
+	var inheritedMetadata MetadataID
 	if n := c.a.Node(base); n.kind == Refined {
 		r := c.a.refinements[n.data]
+		inheritedMetadata = r.metadata
 		switch c.a.Node(r.base).kind {
 		case Int:
 			base = r.base
@@ -291,9 +293,12 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 			base = r.base
 			initial = c.a.realConstraintNorm(r.constraint)
 		default:
-			// Metadata-only refinements are transparent. Preserve the base and
-			// reject only additional constraints that this normalizer cannot merge.
-			if r.constraint != 0 && hasConstraintClause(c.t, s.Clauses) {
+			// Metadata-only refinements are transparent. Preserve their metadata
+			// while rejecting additional constraints that this normalizer cannot
+			// merge.
+			if r.constraint == 0 {
+				base = r.base
+			} else if hasConstraintClause(c.t, s.Clauses) {
 				return 0, false, c.errorf(id, "cannot refine %s with additional constraints", c.a.Node(r.base).kind)
 			}
 		}
@@ -317,6 +322,7 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
+	metadata = c.a.mergeMetadata(inheritedMetadata, metadata)
 	return c.a.internRefined(base, constraint, metadata), optional, nil
 }
 

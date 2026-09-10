@@ -55,7 +55,7 @@ func TestTraverse(t *testing.T) {
 	typ, err := katschema.Compile(ks.List(ks.Object(
 		ks.Field("nested", ks.With(
 			ks.Object(ks.Field("value", ks.String())),
-			ks.Attr("search.marker", ks.BoolExpr(true)),
+			ks.Attr("some.app.marker", ks.BoolExpr(true)),
 		)),
 	)))
 	if err != nil {
@@ -229,7 +229,7 @@ func TestResolver(t *testing.T) {
 					Field("und", Optional(String())),
 				),
 			),
-			Attr("search.logical_type", StrExpr("analyzed")),
+			Attr("some.app.marker", StrExpr("analyzed")),
 		), CacheKey: "global:analyzed"}, nil
 	})
 	compiler := katschema.NewCompilerWithResolver(resolver)
@@ -241,7 +241,7 @@ func TestResolver(t *testing.T) {
 	if typ.Kind() != katschema.Refined || !ok || base.Kind() != katschema.Sum || len(base.Variants()) != 2 {
 		t.Fatalf("resolved analyzed type=%v, base=%v, variants=%d", typ.Kind(), base.Kind(), len(base.Variants()))
 	}
-	if got, ok := typ.Metadata().Get("search.logical_type"); !ok || got != "analyzed" {
+	if got, ok := typ.Metadata().Get("some.app.marker"); !ok || got != "analyzed" {
 		t.Fatalf("logical type metadata=%v, found=%v", got, ok)
 	}
 	if _, err := compiler.Compile(Type("analyzed")); err != nil {
@@ -250,13 +250,23 @@ func TestResolver(t *testing.T) {
 	if resolverCalls != 2 {
 		t.Fatalf("resolver calls=%d, want one call per compile to obtain the scope key", resolverCalls)
 	}
-	optionalField, err := compiler.Compile(Object(Field("custom_fields", Optional(Type("analyzed")))))
+	optionalField, err := compiler.Compile(Object(Field("custom_fields", With(
+		Type("analyzed"),
+		Flag("optional"),
+		Attr("mapping", StrExpr("custom_fields")),
+	))))
 	if err != nil {
 		t.Fatalf("optional resolved field: %v", err)
 	}
 	field, ok := optionalField.Field("custom_fields")
 	if !ok || !field.Optional {
 		t.Fatalf("optional resolved field=%+v, found=%v", field, ok)
+	}
+	if got, ok := field.Type.Metadata().Get("some.app.marker"); !ok || got != "analyzed" {
+		t.Fatalf("wrapped resolved logical type metadata=%v, found=%v", got, ok)
+	}
+	if got, ok := field.Type.Metadata().Get("mapping"); !ok || got != "custom_fields" {
+		t.Fatalf("wrapped resolved mapping metadata=%v, found=%v", got, ok)
 	}
 
 	customer := "abc"
