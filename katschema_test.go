@@ -1,6 +1,7 @@
 package katschema_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 func TestCompile(t *testing.T) {
 	t.Parallel()
 
-	typ, err := katschema.Compile(Object(
+	typ, err := katschema.Compile(t.Context(), Object(
 		Field("id", String()),
 		Field("tags", Optional(List(String()))),
 	))
@@ -39,7 +40,7 @@ func TestCompile(t *testing.T) {
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	typ, err := katschema.Compile(Object(
+	typ, err := katschema.Compile(t.Context(), Object(
 		Field("id", String()),
 		Field("age", Optional(Int())),
 	))
@@ -58,7 +59,7 @@ func TestValidate(t *testing.T) {
 func TestTraverse(t *testing.T) {
 	t.Parallel()
 
-	typ, err := katschema.Compile(ks.List(ks.Object(
+	typ, err := katschema.Compile(t.Context(), ks.List(ks.Object(
 		ks.Field("nested", ks.With(
 			ks.Object(ks.Field("value", ks.String())),
 			ks.Attr("some.app.marker", ks.BoolExpr(true)),
@@ -79,7 +80,7 @@ func TestTraverse(t *testing.T) {
 		t.Fatal("Traverse found a missing field")
 	}
 
-	literal, err := katschema.Compile(ks.List(ks.LitString("a"), ks.LitString("b")))
+	literal, err := katschema.Compile(t.Context(), ks.List(ks.LitString("a"), ks.LitString("b")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func TestTraverse(t *testing.T) {
 		t.Fatal("Traverse traversed a literal list as a schema list")
 	}
 
-	object, err := katschema.Compile(ks.Object(
+	object, err := katschema.Compile(t.Context(), ks.Object(
 		ks.Field("a", ks.LitInt(1)),
 		ks.Field("b", ks.Object(ks.Field("c", ks.LitInt(1)))),
 	))
@@ -104,7 +105,7 @@ func TestTraverse(t *testing.T) {
 	if !ok {
 		t.Fatal("Traverse returned no literal field")
 	}
-	one, err := katschema.Compile(ks.LitInt(1))
+	one, err := katschema.Compile(t.Context(), ks.LitInt(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,11 +118,11 @@ func TestSubtype(t *testing.T) {
 	t.Parallel()
 
 	compiler := katschema.NewCompiler()
-	required, err := compiler.Compile(Object(Field("id", String())))
+	required, err := compiler.Compile(t.Context(), Object(Field("id", String())))
 	if err != nil {
 		t.Fatal(err)
 	}
-	optional, err := compiler.Compile(Object(Field("id", Optional(String()))))
+	optional, err := compiler.Compile(t.Context(), Object(Field("id", Optional(String()))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,14 +135,14 @@ func TestOverlay(t *testing.T) {
 	t.Parallel()
 
 	cc := katschema.NewCompiler()
-	base, err := cc.Compile(Object(
+	base, err := cc.Compile(t.Context(), Object(
 		Field("id", With(String(), Flag("pk"))),
 		Field("text", Optional(String())),
 	))
 	if err != nil {
 		t.Fatal(err)
 	}
-	top, err := cc.Compile(Object(
+	top, err := cc.Compile(t.Context(), Object(
 		Field("custom_fields", Object(Field("priority", Int()))),
 		Field("text", String()),
 	))
@@ -195,13 +196,13 @@ func TestMetadataIsPreserved(t *testing.T) {
 	t.Parallel()
 
 	cc := katschema.NewCompiler()
-	withOptions, err := cc.Compile(Object(
+	withOptions, err := cc.Compile(t.Context(), Object(
 		Field("id", With(String(), Flag("pk"), Attr("owner", StrExpr("ingestion")))),
 	))
 	if err != nil {
 		t.Fatal(err)
 	}
-	withoutOptions, err := cc.Compile(Object(Field("id", String())))
+	withoutOptions, err := cc.Compile(t.Context(), Object(Field("id", String())))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +231,7 @@ func TestResolver(t *testing.T) {
 	t.Parallel()
 
 	resolverCalls := 0
-	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+	resolver := katschema.ResolverFunc(func(_ context.Context, name string) (katschema.TypeResolution, error) {
 		resolverCalls++
 		if name != "analyzed" {
 			return katschema.TypeResolution{}, katschema.ErrUnknownType
@@ -247,7 +248,7 @@ func TestResolver(t *testing.T) {
 		), Name: "analyzed", CacheKey: "global:analyzed"}, nil
 	})
 	compiler := katschema.NewCompilerWithResolver(resolver)
-	typ, err := compiler.Compile(Type("analyzed"))
+	typ, err := compiler.Compile(t.Context(), Type("analyzed"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,13 +262,13 @@ func TestResolver(t *testing.T) {
 	if got := typ.Name(); got != "analyzed" {
 		t.Fatalf("resolved type name=%q, want analyzed", got)
 	}
-	if _, err := compiler.Compile(Type("analyzed")); err != nil {
+	if _, err := compiler.Compile(t.Context(), Type("analyzed")); err != nil {
 		t.Fatal(err)
 	}
 	if resolverCalls != 2 {
 		t.Fatalf("resolver calls=%d, want one call per compile to obtain the scope key", resolverCalls)
 	}
-	optionalField, err := compiler.Compile(Object(Field("custom_fields", With(
+	optionalField, err := compiler.Compile(t.Context(), Object(Field("custom_fields", With(
 		Type("analyzed"),
 		Flag("optional"),
 		Attr("mapping", StrExpr("custom_fields")),
@@ -290,18 +291,18 @@ func TestResolver(t *testing.T) {
 	}
 
 	customer := "abc"
-	customerCompiler := katschema.NewCompilerWithResolver(katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+	customerCompiler := katschema.NewCompilerWithResolver(katschema.ResolverFunc(func(_ context.Context, name string) (katschema.TypeResolution, error) {
 		return katschema.TypeResolution{
 			Value:    With(String(), Attr("customer", StrExpr(customer))),
 			CacheKey: "custom_fields:" + customer,
 		}, nil
 	}))
-	abc, err := customerCompiler.Compile(Type("custom_fields"))
+	abc, err := customerCompiler.Compile(t.Context(), Type("custom_fields"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	customer = "xyz"
-	xyz, err := customerCompiler.Compile(Type("custom_fields"))
+	xyz, err := customerCompiler.Compile(t.Context(), Type("custom_fields"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +310,7 @@ func TestResolver(t *testing.T) {
 		t.Fatal("customer-scoped cache keys must not reuse another customer's definition")
 	}
 
-	_, err = katschema.CompileWithResolver(Type("missing"), resolver)
+	_, err = katschema.CompileWithResolver(t.Context(), Type("missing"), resolver)
 	if err == nil || !errors.Is(err, katschema.ErrUnknownType) {
 		t.Fatalf("missing type error=%v, want ErrUnknownType", err)
 	}
@@ -320,7 +321,7 @@ func TestTypeNameIsOptionalAndNotSemantic(t *testing.T) {
 
 	// NOTE(i4k): this is not the right way of defining a resolver.
 	// For testing purposes this wraps every non-builtin name with a test constraint.
-	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+	resolver := katschema.ResolverFunc(func(_ context.Context, name string) (katschema.TypeResolution, error) {
 		return katschema.TypeResolution{
 			Value: With(Int(), Check(Binary(X(), Gt, IntExpr(0)))),
 			Name:  name,
@@ -328,14 +329,14 @@ func TestTypeNameIsOptionalAndNotSemantic(t *testing.T) {
 	})
 	compiler := katschema.NewCompilerWithResolver(resolver)
 
-	positiveInt, err := compiler.Compile(Type("positive_int"))
+	positiveInt, err := compiler.Compile(t.Context(), Type("positive_int"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := positiveInt.Name(); got != "positive_int" {
 		t.Fatalf("resolved type name=%q, want positive_int", got)
 	}
-	bounded, err := compiler.Compile(With(
+	bounded, err := compiler.Compile(t.Context(), With(
 		Type("positive_int"),
 		Check(Binary(X(), Lt, IntExpr(100))),
 	))
@@ -346,7 +347,7 @@ func TestTypeNameIsOptionalAndNotSemantic(t *testing.T) {
 		t.Fatalf("refined resolved type name=%q, want positive_int", got)
 	}
 
-	score, err := compiler.Compile(Type("score"))
+	score, err := compiler.Compile(t.Context(), Type("score"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +361,7 @@ func TestTypeNameIsOptionalAndNotSemantic(t *testing.T) {
 		t.Fatal("different type names share definition identity")
 	}
 
-	unnamed, err := katschema.Compile(With(Int(), Check(Binary(X(), Gt, IntExpr(0)))))
+	unnamed, err := katschema.Compile(t.Context(), With(Int(), Check(Binary(X(), Gt, IntExpr(0)))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,10 +373,10 @@ func TestTypeNameIsOptionalAndNotSemantic(t *testing.T) {
 func TestResolverRejectsRecursion(t *testing.T) {
 	t.Parallel()
 
-	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+	resolver := katschema.ResolverFunc(func(_ context.Context, name string) (katschema.TypeResolution, error) {
 		return katschema.TypeResolution{Value: Type(map[string]string{"a": "b", "b": "a"}[name])}, nil
 	})
-	_, err := katschema.CompileWithResolver(Type("a"), resolver)
+	_, err := katschema.CompileWithResolver(t.Context(), Type("a"), resolver)
 	if err == nil || !errors.Is(err, katschema.ErrResolveCycle) {
 		t.Fatalf("recursive resolver error=%v", err)
 	}
@@ -384,16 +385,37 @@ func TestResolverRejectsRecursion(t *testing.T) {
 func TestUnknownTypeFromCompiler(t *testing.T) {
 	t.Parallel()
 
-	_, err := katschema.Compile(Type("missing"))
+	_, err := katschema.Compile(t.Context(), Type("missing"))
 	if err == nil || !errors.Is(err, katschema.ErrUnknownType) {
 		t.Fatalf("unknown type error=%v, want ErrUnknownType", err)
+	}
+}
+
+func TestCompileContextIsPassedToResolver(t *testing.T) {
+	t.Parallel()
+
+	type contextKey struct{}
+	key := contextKey{}
+	ctx := context.WithValue(context.Background(), key, "request-value")
+	resolver := katschema.ResolverFunc(func(got context.Context, name string) (katschema.TypeResolution, error) {
+		if name != "request_type" {
+			return katschema.TypeResolution{}, katschema.ErrUnknownType
+		}
+		if got.Value(key) != "request-value" {
+			t.Fatalf("resolver context value=%v, want request-value", got.Value(key))
+		}
+		return katschema.TypeResolution{Value: String()}, nil
+	})
+
+	if _, err := katschema.CompileWithResolver(ctx, Type("request_type"), resolver); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestResolverPreservesConstrainedType(t *testing.T) {
 	t.Parallel()
 
-	resolver := katschema.ResolverFunc(func(name string) (katschema.TypeResolution, error) {
+	resolver := katschema.ResolverFunc(func(_ context.Context, name string) (katschema.TypeResolution, error) {
 		if name != "language" {
 			return katschema.TypeResolution{}, katschema.ErrUnknownType
 		}
@@ -403,7 +425,7 @@ func TestResolverPreservesConstrainedType(t *testing.T) {
 			Flag("logical"),
 		)}, nil
 	})
-	typ, err := katschema.CompileWithResolver(Object(Field("language", Type("language"))), resolver)
+	typ, err := katschema.CompileWithResolver(t.Context(), Object(Field("language", Type("language"))), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
