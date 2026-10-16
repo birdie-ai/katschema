@@ -1,6 +1,7 @@
 package katschema_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/birdie-ai/katschema"
@@ -8,7 +9,7 @@ import (
 )
 
 func BenchmarkTraverse(b *testing.B) {
-	typ, err := katschema.Compile(ks.List(ks.With(
+	typ, err := katschema.Compile(context.Background(), ks.List(ks.With(
 		ks.Object(
 			ks.Field("id", ks.String()),
 			ks.Field("child", ks.With(

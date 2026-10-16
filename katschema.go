@@ -1,6 +1,7 @@
 package katschema
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -74,7 +75,7 @@ var (
 // TypeResolver resolves names that are not Katschema builtins. Returning
 // ErrUnknownType indicates that the name is not defined.
 type TypeResolver interface {
-	Resolve(name string) (TypeResolution, error)
+	Resolve(ctx context.Context, name string) (TypeResolution, error)
 }
 
 // TypeResolution is the result of resolving a user-defined type. Name is an
@@ -88,9 +89,11 @@ type TypeResolution struct {
 }
 
 // ResolverFunc adapts a function to TypeResolver.
-type ResolverFunc func(name string) (TypeResolution, error)
+type ResolverFunc func(context.Context, string) (TypeResolution, error)
 
-func (f ResolverFunc) Resolve(name string) (TypeResolution, error) { return f(name) }
+func (f ResolverFunc) Resolve(ctx context.Context, name string) (TypeResolution, error) {
+	return f(ctx, name)
+}
 
 func NewCompiler() *Compiler {
 	return &Compiler{arena: compiled.NewArena()}
@@ -105,16 +108,15 @@ func NewCompilerWithResolver(resolver TypeResolver) *Compiler {
 }
 
 // Compile compiles a Katschema value into an immutable semantic type.
-func Compile(value ks.Value) (Type, error) {
-	return NewCompiler().Compile(value)
+func Compile(ctx context.Context, value ks.Value) (Type, error) {
+	return NewCompiler().Compile(ctx, value)
 }
 
-// CompileWithResolver compiles a value using a resolver for non-builtin names.
-func CompileWithResolver(value ks.Value, resolver TypeResolver) (Type, error) {
-	return NewCompilerWithResolver(resolver).Compile(value)
+func CompileWithResolver(ctx context.Context, value ks.Value, resolver TypeResolver) (Type, error) {
+	return NewCompilerWithResolver(resolver).Compile(ctx, value)
 }
 
-func (c *Compiler) Compile(value ks.Value) (Type, error) {
+func (c *Compiler) Compile(ctx context.Context, value ks.Value) (Type, error) {
 	tree, root, err := ks.Build(value)
 	if err != nil {
 		return Type{}, err
@@ -123,7 +125,7 @@ func (c *Compiler) Compile(value ks.Value) (Type, error) {
 	resolve := compiled.TypeResolver(nil)
 	if c.resolver != nil {
 		resolve = func(name string) (compiled.ResolvedType, error) {
-			resolution, err := c.resolver.Resolve(name)
+			resolution, err := c.resolver.Resolve(ctx, name)
 			if err != nil {
 				return compiled.ResolvedType{}, err
 			}
