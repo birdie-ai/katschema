@@ -90,6 +90,8 @@ func (a *Arena) typeCheckBase(schema TypeID) TypeID {
 			return a.f32
 		case f64Fmt:
 			return a.f64
+		default:
+			panic(d.format)
 		}
 	}
 	return r.base

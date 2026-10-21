@@ -3,11 +3,13 @@ package katschema_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/birdie-ai/katschema"
 	"github.com/birdie-ai/katschema/ks"
 	. "github.com/birdie-ai/katschema/ks"
+	"github.com/google/go-cmp/cmp"
 )
 
 // NOTE(i4k): just smoke tests checking if public API "works".
@@ -131,6 +133,142 @@ func TestSubtype(t *testing.T) {
 	}
 }
 
+func TestCrossCompilerTypeRelations(t *testing.T) {
+	t.Parallel()
+
+	baseCompiler := katschema.NewCompiler()
+	otherCompiler := katschema.NewCompiler()
+	if _, err := otherCompiler.Compile(t.Context(), Object(
+		Field("padding", Sum(String(), List(Int()))),
+	)); err != nil {
+		t.Fatal(err)
+	}
+
+	positive := With(Int(), Check(Binary(X(), Gt, IntExpr(0))), Attr("owner", StrExpr("base")))
+	positiveBase, err := baseCompiler.Compile(t.Context(), positive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	positiveOther, err := otherCompiler.Compile(t.Context(), With(
+		Int(),
+		Check(Binary(X(), Gt, IntExpr(0))),
+		Attr("owner", StrExpr("other")),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !positiveBase.Equivalent(positiveOther) {
+		t.Fatal("same accepted values from different compilers should be equivalent")
+	}
+	if positiveBase.DefinitionFingerprint() == positiveOther.DefinitionFingerprint() {
+		t.Fatal("different metadata should retain different definition fingerprints")
+	}
+
+	nonnegative, err := otherCompiler.Compile(t.Context(), With(
+		Int(), Check(Binary(X(), Ge, IntExpr(0))),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !positiveBase.SubtypeOf(nonnegative) {
+		t.Fatal("positive integers should be a subtype of nonnegative integers across compilers")
+	}
+	if nonnegative.SubtypeOf(positiveBase) {
+		t.Fatal("nonnegative integers should not be a subtype of positive integers")
+	}
+	if positiveBase.Equivalent(nonnegative) {
+		t.Fatal("different accepted value sets should not be equivalent")
+	}
+}
+
+func TestCrossCompilerSumRelations(t *testing.T) {
+	t.Parallel()
+
+	positive := Where(Int(), Binary(X(), Gt, IntExpr(0)))
+	negative := Where(Int(), Binary(X(), Lt, IntExpr(0)))
+	states := Where(String(), Binary(X(), In, ListExpr(LitString("ready"), LitString("done"))))
+	type testcase struct {
+		name   string
+		a, b   ks.Value
+		wantAB bool
+		wantBA bool
+	}
+	for _, tc := range []testcase{
+		{
+			name:   "bounded integer and string",
+			a:      Sum(Int8(), String()),
+			b:      Sum(String(), Int8()),
+			wantAB: true,
+			wantBA: true,
+		},
+		{
+			name:   "disjoint ranges",
+			a:      Sum(positive, negative),
+			b:      Sum(negative, positive),
+			wantAB: true,
+			wantBA: true,
+		},
+		{
+			name:   "enum and integer",
+			a:      Sum(states, Int()),
+			b:      Sum(Int(), states),
+			wantAB: true,
+			wantBA: true,
+		},
+		{
+			name:   "nested union with metadata",
+			a:      Object(Field("choice", With(Sum(Int8(), String()), Attr("owner", StrExpr("a"))))),
+			b:      Object(Field("choice", With(Sum(String(), Int8()), Attr("owner", StrExpr("b"))))),
+			wantAB: true,
+			wantBA: true,
+		},
+		{
+			name:   "constrained member belongs to union",
+			a:      Int8(),
+			b:      Sum(Int8(), String()),
+			wantAB: true,
+		},
+		{
+			name:   "wider range is not equivalent",
+			a:      Sum(Int8(), String()),
+			b:      Sum(Int16(), String()),
+			wantAB: true,
+		},
+		{
+			name:   "unconstrained integer is not bounded",
+			a:      Sum(Int(), String()),
+			b:      Sum(Int8(), String()),
+			wantBA: true,
+		},
+		{
+			name: "different alternatives are not equivalent",
+			a:    Sum(Int8(), Bool()),
+			b:    Sum(Int8(), String()),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			aCompiler, bCompiler := katschema.NewCompiler(), katschema.NewCompiler()
+			// NOTE(i4k): this explore an implementation detail.
+			// Here we shift local IDs so matching definitions cannot rely on matching IDs.
+			compile(t, bCompiler, Object(Field("padding", List(String()))))
+			a, b := compile(t, aCompiler, tc.a), compile(t, bCompiler, tc.b)
+			if got := a.SubtypeOf(b); got != tc.wantAB {
+				t.Errorf("a.SubtypeOf(b) = %v, want %v", got, tc.wantAB)
+			}
+			if got := b.SubtypeOf(a); got != tc.wantBA {
+				t.Errorf("b.SubtypeOf(a) = %v, want %v", got, tc.wantBA)
+			}
+			wantEquivalent := tc.wantAB && tc.wantBA
+			if got := a.Equivalent(b); got != wantEquivalent {
+				t.Errorf("a.Equivalent(b) = %v, want %v", got, wantEquivalent)
+			}
+			if got := b.Equivalent(a); got != wantEquivalent {
+				t.Errorf("b.Equivalent(a) = %v, want %v", got, wantEquivalent)
+			}
+		})
+	}
+}
+
 func TestOverlay(t *testing.T) {
 	t.Parallel()
 
@@ -149,7 +287,7 @@ func TestOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	typ, err := base.Overlay(top)
+	typ, err := katschema.Overlay(base, top)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,9 +324,338 @@ func TestOverlay(t *testing.T) {
 		t.Fatal("invalid overlay value accepted")
 	}
 
-	nested, err := typ.Overlay(top)
+	nested, err := katschema.Overlay(typ, top)
 	if err != nil || nested.SemanticFingerprint() != typ.SemanticFingerprint() {
 		t.Fatalf("nested overlay = %v, want equivalent effective type", err)
+	}
+}
+
+func TestOverlayAcrossCompilers(t *testing.T) {
+	t.Parallel()
+
+	baseCompiler := katschema.NewCompiler()
+	topCompiler := katschema.NewCompilerWithResolver(katschema.ResolverFunc(
+		func(_ context.Context, name string) (katschema.TypeResolution, error) {
+			if name != "positive_int" {
+				return katschema.TypeResolution{}, katschema.ErrUnknownType
+			}
+			return katschema.TypeResolution{
+				Value: With(Int(), Check(Binary(X(), Gt, IntExpr(0)))),
+				Name:  name,
+			}, nil
+		},
+	))
+	// Deliberately compile unrelated types first so equivalent definitions do
+	// not happen to have matching arena-local IDs.
+	if _, err := topCompiler.Compile(t.Context(), Object(
+		Field("padding", Sum(String(), List(Int()))),
+		Field("other", With(Real(), Check(Binary(X(), Ge, DecimalExpr("0.1"))))),
+	)); err != nil {
+		t.Fatal(err)
+	}
+
+	base, err := baseCompiler.Compile(t.Context(), Object(
+		Field("id", With(String(), Flag("pk"))),
+		Field("replace", Optional(With(
+			Int(),
+			Check(Binary(X(), Ge, IntExpr(0))),
+			Attr("source", StrExpr("core")),
+			Flag("core_only"),
+		))),
+		Field("nested", Object(Field("core", String()))),
+		Field("custom_fields", Object(Field("legacy", String()))),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	top, err := topCompiler.Compile(t.Context(), Object(
+		Field("replace", With(
+			Int(),
+			Check(Binary(X(), Ge, IntExpr(5))),
+			Check(Binary(X(), Le, IntExpr(10))),
+			Attr("source", StrExpr("request")),
+			Attr("tags", ListExpr(LitString("dynamic"), LitString("scoped"))),
+		)),
+		Field("nested", Object(Field("request", String()))),
+		Field("custom_fields", Object(Field("priority", With(
+			Int(), Check(Binary(X(), Gt, IntExpr(0))),
+		)))),
+		Field("items", List(With(Int(), Check(Binary(X(), Gt, IntExpr(0)))))),
+		Field("choice", Sum(String(), Int())),
+		Field("ratio", Optional(With(Float32(), Check(Binary(X(), Lt, DecimalExpr("10")))))),
+		Field("tuple", List(LitString("version"), LitInt(2))),
+		Field("state", With(String(), Check(Binary(X(), In, ListExpr(LitString("ready"), LitString("done")))))),
+		Field("rank", Type("positive_int")),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	baseDefinition := base.DefinitionFingerprint()
+	topDefinition := top.DefinitionFingerprint()
+	overlay, err := katschema.Overlay(base, top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.DefinitionFingerprint() != baseDefinition || top.DefinitionFingerprint() != topDefinition {
+		t.Fatal("overlay mutated an input type")
+	}
+
+	replaced, ok := overlay.Field("replace")
+	if !ok || replaced.Optional {
+		t.Fatalf("replace field = %+v, found=%v; top definition should replace the complete base field", replaced, ok)
+	}
+	if got, ok := replaced.Metadata().Get("source"); !ok || got != "request" {
+		t.Fatalf("replace source metadata = %v, found=%v", got, ok)
+	}
+	if _, ok := replaced.Metadata().Get("core_only"); ok {
+		t.Fatal("metadata from the replaced field definition leaked from the base")
+	}
+	if got, ok := replaced.Metadata().Get("tags"); !ok {
+		t.Fatal("replace tags metadata is missing")
+	} else if diff := cmp.Diff(got, []any{"dynamic", "scoped"}); diff != "" {
+		t.Fatalf("replace tags metadata differs (-got +want):\n%s", diff)
+	}
+	if got, ok := overlay.Traverse(katschema.Path{"rank"}); !ok || got.Name() != "positive_int" {
+		t.Fatalf("resolved type name = %q, want positive_int", got.Name())
+	}
+	if _, ok := overlay.Traverse(katschema.Path{"custom_fields", "legacy"}); ok {
+		t.Fatal("top custom_fields definition did not replace the complete base field")
+	}
+	if got, ok := overlay.Traverse(katschema.Path{"custom_fields", "priority"}); !ok || got.Kind() != katschema.Refined {
+		t.Fatalf("custom_fields.priority = %v, found=%v; want refinement", got.Kind(), ok)
+	}
+	if got, ok := overlay.Traverse(katschema.Path{"nested", "request"}); !ok || got.Kind() != katschema.String {
+		t.Fatalf("nested.request = %v, found=%v", got.Kind(), ok)
+	}
+	if _, ok := overlay.Traverse(katschema.Path{"nested", "core"}); ok {
+		t.Fatal("top nested definition did not replace the complete base field")
+	}
+
+	valid := Object(
+		Field("id", LitString("one")),
+		Field("replace", LitInt(7)),
+		Field("nested", Object(Field("request", LitString("ok")))),
+		Field("custom_fields", Object(Field("priority", LitInt(1)))),
+		Field("items", List(LitInt(1), LitInt(2))),
+		Field("choice", LitString("text")),
+		Field("ratio", LitInt(1)),
+		Field("tuple", List(LitString("version"), LitInt(2))),
+		Field("state", LitString("ready")),
+		Field("rank", LitInt(1)),
+	)
+	for _, tc := range []struct {
+		name  string
+		value ks.Value
+	}{
+		{"id", LitString("one")},
+		{"replace", LitInt(7)},
+		{"nested", Object(Field("request", LitString("ok")))},
+		{"custom_fields", Object(Field("priority", LitInt(1)))},
+		{"items", List(LitInt(1), LitInt(2))},
+		{"choice", LitString("text")},
+		{"ratio", LitInt(1)},
+		{"tuple", List(LitString("version"), LitInt(2))},
+		{"state", LitString("ready")},
+		{"rank", LitInt(1)},
+	} {
+		field, ok := overlay.Field(tc.name)
+		if !ok {
+			t.Fatalf("missing field %q", tc.name)
+		}
+		if err := field.Type.Validate(tc.value); err != nil {
+			t.Errorf("field %q rejected valid value: %v", tc.name, err)
+		}
+	}
+	ratio, _ := overlay.Field("ratio")
+	if err := ratio.Type.Validate(LitInt(11)); err == nil {
+		t.Fatal("overlaid float range accepted an out-of-range value")
+	}
+	if err := overlay.Validate(valid); err != nil {
+		t.Fatalf("valid cross-compiler overlay value rejected: %v", err)
+	}
+	for _, invalid := range []ks.Value{
+		Object(
+			Field("id", LitString("one")),
+			Field("replace", LitInt(2)),
+			Field("nested", Object(Field("request", LitString("ok")))),
+			Field("custom_fields", Object(Field("priority", LitInt(1)))),
+			Field("items", List(LitInt(1))),
+			Field("choice", LitString("text")),
+			Field("tuple", List(LitString("version"), LitInt(2))),
+			Field("state", LitString("ready")),
+			Field("rank", LitInt(1)),
+		),
+		Object(
+			Field("id", LitString("one")),
+			Field("replace", LitInt(11)),
+			Field("nested", Object(Field("request", LitString("ok")))),
+			Field("custom_fields", Object(Field("priority", LitInt(1)))),
+			Field("items", List(LitInt(1))),
+			Field("choice", LitString("text")),
+			Field("tuple", List(LitString("version"), LitInt(2))),
+			Field("state", LitString("ready")),
+			Field("rank", LitInt(1)),
+		),
+		Object(
+			Field("id", LitString("one")),
+			Field("replace", LitInt(7)),
+			Field("nested", Object(Field("request", LitString("ok")))),
+			Field("custom_fields", Object(Field("priority", LitInt(0)))),
+			Field("items", List(LitInt(1))),
+			Field("choice", LitString("text")),
+			Field("tuple", List(LitString("version"), LitInt(2))),
+			Field("state", LitString("ready")),
+			Field("rank", LitInt(1)),
+		),
+		Object(
+			Field("id", LitString("one")),
+			Field("replace", LitInt(7)),
+			Field("nested", Object(Field("request", LitString("ok")))),
+			Field("custom_fields", Object(Field("priority", LitInt(1)))),
+			Field("items", List(LitInt(0))),
+			Field("choice", LitString("text")),
+			Field("tuple", List(LitString("version"), LitInt(2))),
+			Field("state", LitString("unknown")),
+			Field("rank", LitInt(1)),
+		),
+		Object(
+			Field("id", LitString("one")),
+			Field("replace", LitInt(7)),
+			Field("nested", Object(Field("request", LitString("ok")))),
+			Field("custom_fields", Object(Field("priority", LitInt(1)))),
+			Field("items", List(LitInt(1))),
+			Field("choice", LitString("text")),
+			Field("tuple", List(LitString("version"), LitInt(2))),
+			Field("state", LitString("ready")),
+			Field("rank", LitInt(0)),
+		),
+	} {
+		if err := overlay.Validate(invalid); err == nil {
+			t.Fatal("invalid value accepted by cross-compiler overlay")
+		}
+	}
+
+	gotCustomFields, _ := overlay.Traverse(katschema.Path{"custom_fields"})
+	wantCustomFields, _ := top.Traverse(katschema.Path{"custom_fields"})
+	if !gotCustomFields.Equivalent(wantCustomFields) {
+		t.Fatal("overlaid custom-fields type should be semantically equivalent across arenas")
+	}
+}
+
+func TestOverlaySemanticOperationsAcrossCompilers(t *testing.T) {
+	t.Parallel()
+
+	baseCompiler := katschema.NewCompiler()
+	topCompiler := katschema.NewCompiler()
+	expectedCompiler := katschema.NewCompiler()
+	if _, err := topCompiler.Compile(t.Context(), Object(
+		Field("padding", Sum(String(), List(Int()))),
+	)); err != nil {
+		t.Fatal(err)
+	}
+
+	base, err := baseCompiler.Compile(t.Context(), Object(
+		Field("id", String()),
+		Field("replace", String()),
+		Field("retained", Optional(Int())),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	top, err := topCompiler.Compile(t.Context(), Object(
+		Field("replace", Optional(Int())),
+		Field("added", Bool()),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := expectedCompiler.Compile(t.Context(), Object(
+		Field("id", String()),
+		Field("replace", Optional(Int())),
+		Field("retained", Optional(Int())),
+		Field("added", Bool()),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlay, err := katschema.Overlay(base, top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !overlay.Equivalent(want) || !want.Equivalent(overlay) {
+		t.Fatal("overlay should be semantically equivalent to the expected object across arenas")
+	}
+	if !overlay.SubtypeOf(want) || !want.SubtypeOf(overlay) {
+		t.Fatal("overlay should compare as a subtype in both directions with the expected object")
+	}
+	if overlay.SemanticFingerprint() != want.SemanticFingerprint() {
+		t.Fatal("overlay semantic fingerprint differs from the expected object")
+	}
+	scalar, err := katschema.Compile(t.Context(), Int())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := katschema.Overlay(scalar, base); err == nil {
+		t.Fatal("overlay should reject a non-object operand")
+	}
+}
+
+func TestOverlayConcurrentReadOnlyOperations(t *testing.T) {
+	t.Parallel()
+
+	base, err := katschema.Compile(t.Context(), Object(Field("core", String())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	top, err := katschema.Compile(t.Context(), Object(Field("dynamic", List(Int()))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := katschema.Compile(t.Context(), Object(
+		Field("core", String()),
+		Field("dynamic", List(Int())),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlay, err := katschema.Overlay(base, top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := Object(
+		Field("core", LitString("ok")),
+		Field("dynamic", List(LitInt(1), LitInt(2))),
+	)
+
+	const workers = 8
+	const iterations = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*iterations*4)
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range iterations {
+				if _, ok := overlay.Traverse(katschema.Path{"dynamic"}); !ok {
+					errs <- errors.New("Traverse failed on a concurrent overlay read")
+				}
+				if err := overlay.Validate(value); err != nil {
+					errs <- err
+				}
+				if !overlay.Equivalent(want) {
+					errs <- errors.New("Equivalent failed on a concurrent overlay read")
+				}
+				if overlay.SemanticFingerprint() != want.SemanticFingerprint() {
+					errs <- errors.New("fingerprint changed on a concurrent overlay read")
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }
 
@@ -224,6 +691,26 @@ func TestMetadataIsPreserved(t *testing.T) {
 	}
 	if withOptions.DefinitionFingerprint() == withoutOptions.DefinitionFingerprint() {
 		t.Fatal("metadata should change definition fingerprint")
+	}
+}
+
+func TestNullMetadata(t *testing.T) {
+	t.Parallel()
+	typ, err := katschema.Compile(t.Context(), With(String(),
+		Attr("empty", NullExpr()),
+		Attr("items", ListExpr(LitNull(), LitString("value"))),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := typ.Metadata()
+	if value, ok := metadata.Get("empty"); !ok || value != nil {
+		t.Fatalf("null metadata = %v, found=%v; want nil, true", value, ok)
+	}
+	if value, ok := metadata.Get("items"); !ok {
+		t.Fatal("list containing null metadata is missing")
+	} else if diff := cmp.Diff([]any{nil, "value"}, value); diff != "" {
+		t.Fatalf("metadata differs (-want +got):\n%s", diff)
 	}
 }
 

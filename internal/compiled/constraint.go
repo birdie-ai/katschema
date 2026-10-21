@@ -230,8 +230,9 @@ func invertOrder(op token.Kind) token.Kind {
 		return token.Lt
 	case token.Ge:
 		return token.Le
+	default:
+		panic(op)
 	}
-	return op
 }
 
 // NOTE(i4k): this could seem complex but it's actually quite simple.
@@ -488,6 +489,8 @@ func (n *normalizer) applyInt(op token.Kind, v TypeID) {
 			r.max = v
 			r.flags |= hasMax
 		}
+	default:
+		panic(op)
 	}
 }
 
@@ -558,6 +561,8 @@ func (n *normalizer) applyLen(op token.Kind, v int64) {
 			r.max = v
 			r.flags |= hasMax
 		}
+	default:
+		panic(op)
 	}
 }
 

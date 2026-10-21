@@ -74,8 +74,8 @@ func TestTypeCheck(t *testing.T) {
 			schema: ks.Real(),
 			value:  ks.LitInt(10),
 			check: func(t *testing.T, a *Arena, got TypeID) {
-				if a.Type(got).Base() != a.Real() {
-					t.Fatalf("typed literal base = %d, want real %d", a.Type(got).Base(), a.Real())
+				if a.Type(got).Base().ID() != a.Real() {
+					t.Fatalf("typed literal base = %d, want real %d", a.Type(got).Base().ID(), a.Real())
 				}
 				checkDecimal(t, a, got, "10", RealAtom)
 			},
@@ -85,8 +85,8 @@ func TestTypeCheck(t *testing.T) {
 			schema: ks.Where(ks.Float32(), ks.Binary(ks.X(), ks.Lt, ks.DecimalExpr("100"))),
 			value:  ks.LitDecimal("31.5"),
 			check: func(t *testing.T, a *Arena, got TypeID) {
-				if a.Type(got).Base() != a.Float32() {
-					t.Fatalf("typed literal base = %d, want float32 %d", a.Type(got).Base(), a.Float32())
+				if a.Type(got).Base().ID() != a.Float32() {
+					t.Fatalf("typed literal base = %d, want float32 %d", a.Type(got).Base().ID(), a.Float32())
 				}
 				checkDecimal(t, a, got, "31.5", RealAtom)
 			},
@@ -115,21 +115,21 @@ func TestTypeCheck(t *testing.T) {
 				temp := fields.MustGet("temp")
 				name := fields.MustGet("name")
 				meta := fields.MustGet("metadata")
-				if tempBase := a.Type(temp.Type()).Base(); tempBase != a.Float32() {
+				if tempBase := temp.Type().Base().ID(); tempBase != a.Float32() {
 					t.Fatalf("temp base = %d, want float32 %d", tempBase, a.Float32())
 				}
-				if nameType := a.Type(name.Type()).Base(); nameType != a.String() {
+				if nameType := name.Type().Base().ID(); nameType != a.String() {
 					t.Fatalf("name is not a string: %d", nameType)
 				}
-				metaFields := a.Type(meta.Type()).Fields()
+				metaFields := meta.Type().Fields()
 				if metaFields.Len() != 1 {
 					t.Fatalf("unexpected metadata fields length")
 				}
 				aField := metaFields.MustGet("a")
-				if abase := a.Type(aField.Type()).Base(); abase != a.String() {
+				if abase := aField.Type().Base().ID(); abase != a.String() {
 					t.Fatal("unexpected metadata.a base type")
 				}
-				_, ok := a.Literal(aField.Type())
+				_, ok := a.Literal(aField.Type().ID())
 				if !ok {
 					t.Fatal("a value is not a literal")
 				}
@@ -156,10 +156,10 @@ func TestTypeCheck(t *testing.T) {
 				}
 				temp := fields.MustGet("temp")
 				name := fields.MustGet("name")
-				if tempBase := a.Type(temp.Type()).Base(); tempBase != a.Float32() {
+				if tempBase := temp.Type().Base().ID(); tempBase != a.Float32() {
 					t.Fatalf("temp base = %d, want float32 %d", tempBase, a.Float32())
 				}
-				if nameType := a.Type(name.Type()).Base(); nameType != a.String() {
+				if nameType := name.Type().Base().ID(); nameType != a.String() {
 					t.Fatalf("name is not a string: %d", nameType)
 				}
 			},

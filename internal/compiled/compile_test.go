@@ -797,15 +797,15 @@ func TestTraversalDeterministic(t *testing.T) {
 
 	authors := obj.Fields().At(0)
 	title := obj.Fields().At(1)
-	if title.Name() != "title" || a.Type(title.Type()).Kind() != String {
-		t.Fatalf("first field = %q/%s", title.Name(), a.Type(title.Type()).Kind())
+	if title.Name() != "title" || title.Type().Kind() != String {
+		t.Fatalf("first field = %q/%s", title.Name(), title.Type().Kind())
 	}
 	if authors.Name() != "authors" {
 		t.Fatalf("second field = %q", authors.Name())
 	}
-	list := a.Type(authors.Type())
-	if list.Kind() != List || a.Type(list.Element()).Kind() != String {
-		t.Fatalf("tags = %s[%s]", list.Kind(), a.Type(list.Element()).Kind())
+	list := authors.Type()
+	if list.Kind() != List || list.Element().Kind() != String {
+		t.Fatalf("tags = %s[%s]", list.Kind(), list.Element().Kind())
 	}
 }
 
