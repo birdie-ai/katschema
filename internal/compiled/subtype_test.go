@@ -266,6 +266,12 @@ func TestSubtype(t *testing.T) {
 			if got := arena.Subtype(a, b); got != tc.want {
 				t.Fatalf("Subtype(a, b) = %v, want %v", got, tc.want)
 			}
+			other := NewArena()
+			compile(t, other, ks.Object(ks.Field("padding", ks.List(ks.String()))))
+			otherB := compile(t, other, tc.b)
+			if got := arena.Type(a).SubtypeOf(other.Type(otherB)); got != tc.want {
+				t.Fatalf("cross-arena Subtype(a, b) = %v, want %v", got, tc.want)
+			}
 			if a != b {
 				// we can also check the reverse but only if they are different types.
 				if got := arena.Subtype(b, a); got != !tc.want {

@@ -14,15 +14,13 @@ type (
 	Kind = compiled.Kind
 
 	// Type is an immutable, read-only view of a compiled schema type.
-	//
-	// Type values are safe to copy.
+	// Type values are safe to copy and can refer to different compiler arenas.
 	Type struct {
-		arena *compiled.Arena
-		id    compiled.TypeID
+		ref compiled.Type
 	}
 
 	// Path is a field path through a compiled value.
-	//   Path{"accounts", "id"} means `accounts.id`.
+	// Path{"accounts", "id"} means accounts.id.
 	Path []string
 
 	// Field represents one object field.
@@ -34,15 +32,12 @@ type (
 	}
 
 	// Metadata is the compiled set of attributes attached to a type or field.
-	Metadata struct {
-		arena *compiled.Arena
-		attrs []compiled.Attribute
-	}
+	Metadata = compiled.Metadata
 
-	// Compiler owns the canonical type used by a group of related compilations.
-	// NOTE(i4k): Types compiled by different compiler instances **cannot** be used together!
-	// Compiler is not safe for concurrent Compile calls; synchronize reuse or
-	// give each concurrent request its own compiler.
+	// Compiler owns the canonical type arena used by a group of related
+	// compilations.
+	// NOTE(i4k): Compiler is not safe for concurrent Compile calls.
+	// Synchronize reuse or give each concurrent request its own compiler.
 	Compiler struct {
 		arena    *compiled.Arena
 		resolver TypeResolver
@@ -137,67 +132,51 @@ func (c *Compiler) Compile(ctx context.Context, value ks.Value) (Type, error) {
 	if err != nil {
 		return Type{}, err
 	}
-	return Type{arena: c.arena, id: id}, nil
+	return Type{ref: c.arena.Type(id)}, nil
 }
 
 // Kind returns the semantic kind of the type.
-func (t Type) Kind() Kind {
-	return t.view().Kind()
-}
+func (t Type) Kind() Kind { return t.ref.Kind() }
 
 // Name returns the optional name attached to a refined type. Unnamed
 // refinements and non-refined types return the empty string.
-func (t Type) Name() string {
-	if t.arena == nil {
-		return ""
-	}
-	return t.arena.TypeName(t.id)
-}
+func (t Type) Name() string { return t.ref.Name() }
 
 // Element returns the element type of a list.
 func (t Type) Element() (Type, bool) {
-	id := t.view().Element()
-	if id == 0 {
-		return Type{}, false
-	}
-	return Type{arena: t.arena, id: id}, true
+	element := t.ref.Element()
+	return Type{ref: element}, element.Kind() != Invalid
 }
 
 // Fields returns the fields of an object in canonical order.
 func (t Type) Fields() []Field {
-	fields := t.view().Fields()
-	length := fields.Len()
-	if length == 0 {
+	fields := t.ref.Fields()
+	if fields.Len() == 0 {
 		return nil
 	}
-	out := make([]Field, 0, length)
-	for i := 0; i < length; i++ {
-		field := fields.At(i)
-		out = append(out, Field{
-			Name:     field.Name(),
-			Type:     Type{arena: t.arena, id: field.Type()},
-			Optional: field.Optional(),
-			metadata: Metadata{arena: t.arena, attrs: field.Metadata()},
-		})
+	out := make([]Field, fields.Len())
+	for i := range out {
+		out[i] = wrapField(fields.At(i))
 	}
 	return out
 }
 
 // Field returns an object field by name.
 func (t Type) Field(name string) (Field, bool) {
-	fields := t.view().Fields()
-	for i := 0; i < fields.Len(); i++ {
-		field := fields.At(i)
-		if field.Name() == name {
-			return Field{
-				Name:     field.Name(),
-				Type:     Type{arena: t.arena, id: field.Type()},
-				Optional: field.Optional(),
-				metadata: Metadata{arena: t.arena, attrs: field.Metadata()},
-			}, true
-		}
+	field, ok := t.ref.Fields().Get(name)
+	if !ok {
+		return Field{}, false
 	}
-	return Field{}, false
+	return wrapField(field), true
+}
+
+func wrapField(field compiled.FieldView) Field {
+	return Field{
+		Name:     field.Name(),
+		Type:     Type{ref: field.Type()},
+		Optional: field.Optional(),
+		metadata: field.Metadata(),
+	}
 }
 
 // Metadata returns attributes attached directly to this field.
@@ -205,24 +184,21 @@ func (f Field) Metadata() Metadata { return f.metadata }
 
 // Variants returns the members of a sum type.
 func (t Type) Variants() []Type {
-	ids := t.view().Variants()
-	if len(ids) == 0 {
+	refs := t.ref.Variants()
+	if len(refs) == 0 {
 		return nil
 	}
-	out := make([]Type, 0, len(ids))
-	for _, id := range ids {
-		out = append(out, Type{arena: t.arena, id: id})
+	out := make([]Type, len(refs))
+	for i, ref := range refs {
+		out[i] = Type{ref: ref}
 	}
 	return out
 }
 
 // Base returns the base type of a refinement.
 func (t Type) Base() (Type, bool) {
-	id := t.view().Base()
-	if id == 0 {
-		return Type{}, false
-	}
-	return Type{arena: t.arena, id: id}, true
+	base := t.ref.Base()
+	return Type{ref: base}, base.Kind() != Invalid
 }
 
 // Traverse returns the compiled type at path.
@@ -243,103 +219,64 @@ func (t Type) Base() (Type, bool) {
 //
 // Then `a.b` and `c.d` both return 1.
 func (t Type) Traverse(path Path) (Type, bool) {
-	for _, name := range path {
-		for {
-			base, ok := t.Base()
-			if !ok {
-				break
-			}
-			t = base
-		}
-		if element, ok := t.Element(); ok {
-			// Element is defined only for schema lists. Literal arrays are
-			// compiled as tuples and must not be traversed as collections.
-			t = element
-			for {
-				base, ok := t.Base()
-				if !ok {
-					break
-				}
-				t = base
-			}
-		}
-		field, ok := t.Field(name)
-		if !ok {
-			return Type{}, false
-		}
-		t = field.Type
+	ref, ok := t.ref.Traverse(path)
+	if !ok {
+		return Type{}, false
 	}
-	return t, true
+	return Type{ref: ref}, true
 }
 
-// Fingerprint returns the canonical identity of the compiled semantic type.
-func (t Type) Fingerprint() uint64 {
-	return t.arena.Fingerprint(t.id)
-}
+// Fingerprint identifies the complete definition, including metadata and names.
+// A matching hash is not a proof of semantic equality; use Equivalent for that.
+func (t Type) Fingerprint() uint64 { return t.ref.Fingerprint() }
 
-// SemanticFingerprint excludes metadata and identifies the accepted values.
-func (t Type) SemanticFingerprint() uint64 {
-	return t.arena.SemanticFingerprint(t.id)
-}
+// SemanticFingerprint excludes metadata and names. Hash matches still require
+// semantic comparison if equality must be established.
+func (t Type) SemanticFingerprint() uint64 { return t.ref.SemanticFingerprint() }
 
 // DefinitionFingerprint includes metadata and identifies the complete compiled definition.
 func (t Type) DefinitionFingerprint() uint64 { return t.Fingerprint() }
 
 // Metadata returns attributes attached directly to this type.
-func (t Type) Metadata() Metadata {
-	return Metadata{arena: t.arena, attrs: t.arena.TypeMetadata(t.id)}
-}
-
-// Get returns an attribute value. A flag attribute is returned as true.
-func (m Metadata) Get(name string) (any, bool) {
-	for _, attr := range m.attrs {
-		if attr.NameValue(m.arena) != name {
-			continue
-		}
-		if !attr.Has() {
-			return true, true
-		}
-		value, err := m.arena.MetadataValue(attr.ValueID())
-		return value, err == nil
-	}
-	return nil, false
-}
-
-func (m Metadata) Has(name string) bool {
-	_, ok := m.Get(name)
-	return ok
-}
+func (t Type) Metadata() Metadata { return t.ref.Metadata() }
 
 // SubtypeOf reports whether every value accepted by t is accepted by other.
-func (t Type) SubtypeOf(other Type) bool {
-	return t.arena.Subtype(t.id, other.id)
-}
+// Types are read in their original arenas; neither compiler is modified.
+func (t Type) SubtypeOf(other Type) bool { return t.ref.SubtypeOf(other.ref) }
 
-// Overlay returns the effective object type formed by placing top over t.
-// Both types must belong to the same compiler and be objects.
-func (t Type) Overlay(top Type) (Type, error) {
-	if t.arena != top.arena {
-		return Type{}, fmt.Errorf("overlay types belong to different compilers")
-	}
-	id, err := t.arena.Overlay(t.id, top.id)
+// Equivalent reports whether t and other accept the same values. Names and
+// metadata do not affect equivalence. Types can belong to different compilers.
+func (t Type) Equivalent(other Type) bool { return t.ref.Equivalent(other.ref) }
+
+// Overlay returns a new type with top's object fields overlaid on bottom.
+// Neither bottom, top, nor their arenas are modified. Fields from top replace
+// complete field definitions, including optionality and metadata.
+func Overlay(bottom, top Type) (Type, error) {
+	ref, err := compiled.Overlay(bottom.ref, top.ref)
 	if err != nil {
 		return Type{}, err
 	}
-	return Type{arena: t.arena, id: id}, nil
+	return Type{ref: ref}, nil
 }
 
-// Validate reports whether value is accepted by the the compiled type.
+// OverlayAt returns a new type with top's object fields overlaid on the object
+// at path in bottom, preserving the enclosing types and field definitions.
+func OverlayAt(bottom Type, path Path, top Type) (Type, error) {
+	ref, err := compiled.OverlayAt(bottom.ref, path, top.ref)
+	if err != nil {
+		return Type{}, err
+	}
+	return Type{ref: ref}, nil
+}
+
+// Validate reports whether value is accepted by the compiled type.
 func (t Type) Validate(value ks.Value) error {
 	tree, root, err := ks.Build(value)
 	if err != nil {
 		return err
 	}
-	if !t.arena.Valid(t.id, tree, root) {
+	if !t.ref.Valid(tree, root) {
 		return fmt.Errorf("%w: value does not conform to %s", ErrValidation, t.Kind())
 	}
 	return nil
-}
-
-func (t Type) view() compiled.Type {
-	return t.arena.Type(t.id)
 }

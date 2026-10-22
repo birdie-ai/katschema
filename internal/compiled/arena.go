@@ -1,9 +1,9 @@
 package compiled
 
 import (
-	"fmt"
 	"math"
 	"math/big"
+	"slices"
 	"sort"
 	"strconv"
 )
@@ -12,12 +12,19 @@ type hashFunc func([]byte) uint64
 
 // Arena owns a canonical semantic DAG.
 //
+// Invariants:
+//   - interned nodes have non-Invalid kinds
+//   - children are interned before their parents.
+//   - TypeID zero means an absent type
+//   - MetadataID and ConstraintID zero means no metadata and no constraint, respectively.
+//
 // NOTE(i4k): Mutation is intentionally not concurrency-safe.
 type Arena struct {
-	nodes        []Node
-	fingerprints []uint64
-	hashNext     []TypeID
-	hashHead     map[uint64]TypeID
+	nodes                []Node
+	fingerprints         []uint64
+	semanticFingerprints []uint64
+	hashNext             []TypeID
+	hashHead             map[uint64]TypeID
 
 	strings     []string
 	stringIndex map[string]StringID
@@ -100,6 +107,7 @@ func (a *Arena) init() {
 
 	a.nodes = append(a.nodes, Node{})
 	a.fingerprints = append(a.fingerprints, 0)
+	a.semanticFingerprints = append(a.semanticFingerprints, 0)
 	a.hashNext = append(a.hashNext, 0)
 	a.hashHead = make(map[uint64]TypeID)
 
@@ -185,7 +193,7 @@ func (a *Arena) StringValue(id StringID) string {
 
 func (a *Arena) TypeName(id TypeID) string {
 	n := a.Node(id)
-	if n.kind != Refined || n.data <= 0 || int(n.data) >= len(a.refinements) {
+	if n.kind != Refined {
 		return ""
 	}
 	return a.StringValue(a.refinements[n.data].name)
@@ -205,6 +213,17 @@ func (a *Arena) appendNode(n Node, fp uint64, next TypeID) TypeID {
 	id := TypeID(len(a.nodes))
 	a.nodes = append(a.nodes, n)
 	a.fingerprints = append(a.fingerprints, fp)
+	// NOTE(i4k): when computing fingerprint of nodes with children (refined, list, object, etc),
+	// the fingerprint of child elements are already cached.
+	typ := a.Type(id)
+	var semantic uint64
+	if n.kind == Refined && typ.constraint().id == 0 {
+		semantic = typ.Base().SemanticFingerprint()
+	} else {
+		a.scratch = typ.fingerprintEncoding(a.scratch[:0], true)
+		semantic = a.hash(a.scratch)
+	}
+	a.semanticFingerprints = append(a.semanticFingerprints, semantic)
 	a.hashNext = append(a.hashNext, next)
 	a.hashHead[fp] = id
 	return id
@@ -434,30 +453,6 @@ func (a *Arena) internObject(fields []Field) TypeID {
 	return a.appendNode(Node{kind: Object, data: i}, fp, a.hashHead[fp])
 }
 
-// Overlay returns the effective object type formed by placing top over base.
-// The top field definition replaces a field with the same name in base.
-func (a *Arena) Overlay(base, top TypeID) (TypeID, error) {
-	if a.Node(base).kind != Object || a.Node(top).kind != Object {
-		return 0, fmt.Errorf("overlay operands must be objects")
-	}
-
-	fields := append([]Field(nil), a.objectFields(base)...)
-	for _, topField := range a.objectFields(top) {
-		found := false
-		for i, field := range fields {
-			if field.Name == topField.Name {
-				fields[i] = topField
-				found = true
-				break
-			}
-		}
-		if !found {
-			fields = append(fields, topField)
-		}
-	}
-	return a.internObject(fields), nil
-}
-
 func (a *Arena) internSum(members [2]TypeID) TypeID {
 	// NOTE(i4k): aggressively intern sum types.
 	// Below are the interning rules:
@@ -549,14 +544,20 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 	flat = out
 
 	// handle case 4 and 5
-	keep := flat[:0]
+	keep := make([]TypeID, 0, len(flat))
 	for i, id := range flat {
 		redundant := false
 		for j, other := range flat {
 			if i == j {
 				continue
 			}
-			if a.Subtype(id, other) {
+			// NOTE(i4k): keep one deterministic representation.
+			// Why not a.Fingerprint(other) <= a.Fingerprint(id) ?
+			// Because in the case they have the same id, we want to use the position
+			// as tiebreaker.
+			otherFirst := a.Fingerprint(other) < a.Fingerprint(id) ||
+				a.Fingerprint(other) == a.Fingerprint(id) && j < i
+			if a.Subtype(id, other) && (!a.Subtype(other, id) || otherFirst) {
 				redundant = true
 				break
 			}
@@ -579,8 +580,13 @@ func (a *Arena) internSum(members [2]TypeID) TypeID {
 	a.scratch = a.scratch[:0]
 	a.scratch = append(a.scratch, encodingVersion, byte(Sum))
 	a.scratch = put32(a.scratch, int32(len(flat)))
-	for _, id := range flat {
-		a.scratch = putu64(a.scratch, a.Fingerprint(id))
+	hashes := make([]uint64, len(flat))
+	for i, id := range flat {
+		hashes[i] = a.Fingerprint(id)
+	}
+	slices.Sort(hashes)
+	for _, hash := range hashes {
+		a.scratch = putu64(a.scratch, hash)
 	}
 
 	fp := a.hash(a.scratch)
@@ -645,27 +651,18 @@ func (a *Arena) internRefinedNamed(base TypeID, c ConstraintID, m MetadataID, na
 
 func (a *Arena) tuple(id TypeID) []TypeID {
 	n := a.Node(id)
-	if n.kind != Tuple || n.data < 0 || int(n.data) >= len(a.tuples) {
-		return nil
-	}
 	r := a.tuples[n.data]
 	return a.refs[r.off : r.off+r.len]
 }
 
 func (a *Arena) objectFields(id TypeID) []Field {
 	n := a.Node(id)
-	if n.kind != Object || n.data < 0 || int(n.data) >= len(a.objects) {
-		return nil
-	}
 	r := a.objects[n.data]
 	return a.fields[r.off : r.off+r.len]
 }
 
 func (a *Arena) sum(id TypeID) []TypeID {
 	n := a.Node(id)
-	if n.kind != Sum || int(n.data) >= len(a.sums) {
-		return nil
-	}
 	r := a.sums[n.data]
 	return a.refs[r.off : r.off+r.len]
 }

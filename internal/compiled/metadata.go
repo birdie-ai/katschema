@@ -6,8 +6,34 @@ import (
 )
 
 type metadata struct {
-	off int32
-	len int32
+	off         int32
+	len         int32
+	fingerprint uint64
+}
+
+// Metadata is a read-only reference to the attributes owned by an arena.
+type Metadata struct {
+	a  *Arena
+	id MetadataID
+}
+
+func (m Metadata) Get(name string) (any, bool) {
+	for _, attr := range m.a.metadataAttrsFor(m.id) {
+		if m.a.StringValue(attr.Name) != name {
+			continue
+		}
+		if !attr.HasValue {
+			return true, true
+		}
+		value, err := m.a.MetadataValue(attr.Value)
+		return value, err == nil
+	}
+	return nil, false
+}
+
+func (m Metadata) Has(name string) bool {
+	_, ok := m.Get(name)
+	return ok
 }
 
 type Attribute struct {
@@ -15,10 +41,6 @@ type Attribute struct {
 	Value    TypeID
 	HasValue bool
 }
-
-func (a Attribute) NameValue(arena *Arena) string { return arena.StringValue(a.Name) }
-func (a Attribute) ValueID() TypeID               { return a.Value }
-func (a Attribute) Has() bool                     { return a.HasValue }
 
 func (a *Arena) internMetadata(attrs []Attribute) MetadataID {
 	if len(attrs) == 0 {
@@ -43,7 +65,7 @@ func (a *Arena) internMetadata(attrs []Attribute) MetadataID {
 		}
 	}
 	id := MetadataID(len(a.metadata))
-	a.metadata = append(a.metadata, metadata{off: int32(len(a.metadataAttrs)), len: int32(len(attrs))})
+	a.metadata = append(a.metadata, metadata{off: int32(len(a.metadataAttrs)), len: int32(len(attrs)), fingerprint: fp})
 	a.metadataAttrs = append(a.metadataAttrs, attrs...)
 	return id
 }
@@ -113,7 +135,7 @@ func (a *Arena) metadataFingerprint(id MetadataID) uint64 {
 		// id=0 means no metadata
 		return 0
 	}
-	return a.metadataFingerprintAttrs(a.metadataAttrsFor(id))
+	return a.metadata[id].fingerprint
 }
 
 func boolByte(v bool) byte {
@@ -123,63 +145,13 @@ func boolByte(v bool) byte {
 	return 0
 }
 
-func (a *Arena) TypeMetadata(id TypeID) []Attribute {
-	n := a.Node(id)
-	if n.kind != Refined || n.data <= 0 || int(n.data) >= len(a.refinements) {
-		return nil
-	}
-	return append([]Attribute(nil), a.metadataAttrsFor(a.refinements[n.data].metadata)...)
-}
-
 // SemanticFingerprint returns an identity that excludes metadata while still
 // including structure, optionality, and constraints.
 func (a *Arena) SemanticFingerprint(id TypeID) uint64 {
-	return a.hash(a.semanticEncoding(id))
-}
-
-func (a *Arena) semanticEncoding(id TypeID) []byte {
-	var visit func([]byte, TypeID) []byte
-	visit = func(out []byte, id TypeID) []byte {
-		n := a.Node(id)
-		if n.kind == Refined {
-			r := a.refinements[n.data]
-			if r.constraint == 0 {
-				return visit(out, r.base)
-			}
-		}
-		out = append(out, encodingVersion, byte(n.kind))
-		switch n.kind {
-		case List:
-			out = putu64(out, a.SemanticFingerprint(TypeID(n.data)))
-		case Tuple:
-			out = put32(out, int32(len(a.tuple(id))))
-			for _, child := range a.tuple(id) {
-				out = putu64(out, a.SemanticFingerprint(child))
-			}
-		case Object:
-			out = put32(out, int32(len(a.objectFields(id))))
-			for _, field := range a.objectFields(id) {
-				out = putstr(out, a.StringValue(field.Name))
-				out = append(out, byte(field.Flags))
-				out = putu64(out, a.SemanticFingerprint(field.Value))
-			}
-		case Sum:
-			out = put32(out, int32(len(a.sum(id))))
-			for _, child := range a.sum(id) {
-				out = putu64(out, a.SemanticFingerprint(child))
-			}
-		case Refined:
-			r := a.refinements[n.data]
-			out = putu64(out, a.SemanticFingerprint(r.base))
-			out = putu64(out, a.constraintFingerprint(r.constraint))
-		}
-		return out
+	if id <= 0 || int(id) >= len(a.semanticFingerprints) {
+		return 0
 	}
-	return visit(nil, id)
-}
-
-func (a *Arena) FieldMetadata(f Field) []Attribute {
-	return append([]Attribute(nil), a.metadataAttrsFor(f.Metadata)...)
+	return a.semanticFingerprints[id]
 }
 
 func (a *Arena) MetadataValue(id TypeID) (any, error) {
@@ -193,6 +165,8 @@ func (a *Arena) value(id TypeID) (any, error) {
 	if atom, ok := a.Literal(id); ok {
 		n := a.Node(atom)
 		switch n.kind {
+		case Null:
+			return nil, nil
 		case BoolAtom:
 			return n.data != 0, nil
 		case IntAtom:
@@ -201,6 +175,8 @@ func (a *Arena) value(id TypeID) (any, error) {
 			return a.realString(atom), nil
 		case StringAtom:
 			return a.StringValue(StringID(n.data)), nil
+		default:
+			panic(n.kind)
 		}
 	}
 	n := a.Node(id)

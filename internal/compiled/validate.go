@@ -2,7 +2,6 @@ package compiled
 
 import (
 	"math/big"
-	"sort"
 	"strconv"
 	"unicode/utf8"
 
@@ -18,11 +17,21 @@ func (a *Arena) Valid(typ TypeID, values *ast.Tree, value ast.NodeID) bool {
 }
 
 func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
-	n := a.Node(typ)
-	switch n.kind {
+	return a.Type(typ).Valid(t, value)
+}
+
+// Valid checks the effective type view, retaining each child's owning arena.
+func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
+	a := typ.a
+	n := a.Node(typ.id)
+	kind := n.kind
+	if typ.view != nil {
+		kind = typ.view.kind
+	}
+	switch kind {
 	case Any:
 		return t.Node(value).Kind().IsValue() && t.Node(value).Kind() != ast.Schema
-	case Never:
+	case Invalid, Never:
 		return false
 	case Null:
 		return t.Node(value).Kind() == ast.Null
@@ -54,7 +63,7 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		if !ok {
 			return false
 		}
-		want, ok := a.realNumber(typ)
+		want, ok := a.realNumber(typ.id)
 		return ok && compareDecimalNumbers(got, want) == 0
 	case StringAtom:
 		return t.Node(value).Kind() == ast.String && t.String(value) == a.StringValue(StringID(n.data))
@@ -62,9 +71,12 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		if t.Node(value).Kind() != ast.List {
 			return false
 		}
-		elem := TypeID(n.data)
+		element := a.Type(TypeID(n.data))
+		if typ.view != nil {
+			element = typ.view.child
+		}
 		for _, v := range t.List(value) {
-			if !a.valid(elem, t, v) {
+			if !element.Valid(t, v) {
 				return false
 			}
 		}
@@ -73,39 +85,57 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 		if t.Node(value).Kind() != ast.List {
 			return false
 		}
-		want, got := a.tuple(typ), t.List(value)
+		want, got := a.tuple(typ.id), t.List(value)
 		if len(want) != len(got) {
 			return false
 		}
-		for i := range want {
+		for i := range got {
 			if !a.valid(want[i], t, got[i]) {
 				return false
 			}
 		}
 		return true
+	case Sum:
+		for _, member := range a.sum(typ.id) {
+			if a.valid(member, t, value) {
+				return true
+			}
+		}
+		return false
 	case Object:
-		return a.validObject(typ, t, value)
+		return typ.validObject(t, value)
 	case Refined:
 		r := a.refinements[n.data]
-		return a.valid(r.base, t, value) && a.validConstraint(r.constraint, t, value)
+		base := a.Type(r.base)
+		if typ.view != nil {
+			base = typ.view.child
+		}
+		return base.Valid(t, value) && a.validConstraint(r.constraint, t, value)
+	default:
+		panic(kind)
 	}
-	return false
 }
 
-func (a *Arena) validObject(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
+func (typ Type) validObject(t *ast.Tree, value ast.NodeID) bool {
 	if t.Node(value).Kind() != ast.Object {
 		return false
 	}
-	want := a.objectFields(typ)
+	want := Fields{a: typ.a}
+	if typ.view != nil {
+		want.views = typ.view.fields
+	} else {
+		want.v = typ.a.objectFields(typ.id)
+	}
+	length := want.Len()
 	got := t.Object(value)
-	if len(got) > len(want) {
+	if len(got) > length {
 		return false
 	}
 
 	var small uint64
 	var large []uint64
-	if len(want) > 64 {
-		large = make([]uint64, (len(want)+63)/64)
+	if length > 64 {
+		large = make([]uint64, (length+63)/64)
 	}
 	mark := func(i int) bool {
 		if large == nil {
@@ -133,18 +163,28 @@ func (a *Arena) validObject(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 
 	for _, f := range got {
 		name := t.Text(f.Name)
-		i := sort.Search(len(want), func(i int) bool {
-			return a.StringValue(want[i].Name) >= name
-		})
-		if i == len(want) || a.StringValue(want[i].Name) != name || !mark(i) {
+		i := want.index(name)
+		if i < 0 || !mark(i) {
 			return false
 		}
-		if !a.valid(want[i].Value, t, f.Value) {
+		var child Type
+		if want.views != nil {
+			child = want.views[i].Type()
+		} else {
+			child = want.a.Type(want.v[i].Value)
+		}
+		if !child.Valid(t, f.Value) {
 			return false
 		}
 	}
-	for i, f := range want {
-		if !f.Optional() && !seen(i) {
+	for i := 0; i < length; i++ {
+		var optional bool
+		if want.views != nil {
+			optional = want.views[i].Optional()
+		} else {
+			optional = want.v[i].Optional()
+		}
+		if !optional && !seen(i) {
 			return false
 		}
 	}

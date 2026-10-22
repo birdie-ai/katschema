@@ -42,3 +42,60 @@ func BenchmarkTraverse(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkCrossArenaOverlay(b *testing.B) {
+	core := compile(b, katschema.NewCompiler(), ks.List(ks.With(
+		ks.Object(
+			ks.Field("id", ks.String()),
+			ks.Field("custom_fields", ks.Optional(ks.Object())),
+		),
+		ks.Attr("pks", ks.ListExpr(ks.LitString("id"))),
+	)))
+	topValue := ks.Object(ks.Field("custom_fields", ks.Optional(ks.Object(
+		ks.Field("priority", ks.With(ks.Real(), ks.Attr("mapping", ks.StrExpr("numbers")))),
+	))))
+	top := compile(b, katschema.NewCompiler(), topValue)
+	typ, err := katschema.Overlay(core, top)
+	if err != nil {
+		b.Fatal(err)
+	}
+	otherTop := compile(b, katschema.NewCompiler(), topValue)
+	other, err := katschema.Overlay(core, otherTop)
+	if err != nil {
+		b.Fatal(err)
+	}
+	priority, _ := typ.Traverse(katschema.Path{"custom_fields", "priority"})
+	literal := compile(b, katschema.NewCompiler(), ks.LitInt(7))
+	b.Run("Overlay", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, err := katschema.Overlay(core, top); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("Subtype", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if !literal.SubtypeOf(priority) {
+				b.Fatal("unexpected subtype")
+			}
+		}
+	})
+	b.Run("Equivalent", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if !typ.Equivalent(other) {
+				b.Fatal("unexpected equivalence")
+			}
+		}
+	})
+	b.Run("Fingerprint", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if typ.Fingerprint() != other.Fingerprint() || typ.SemanticFingerprint() != other.SemanticFingerprint() {
+				b.Fatal("unexpected fingerprints")
+			}
+		}
+	})
+}
