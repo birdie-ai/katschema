@@ -46,13 +46,17 @@ func (t Type) Name() string {
 }
 
 func (t Type) Element() Type {
-	if t.Kind() != List {
+	if t.view != nil {
+		if t.view.kind == List {
+			return t.view.child
+		}
 		return t.a.Type(0)
 	}
-	if t.view != nil {
-		return t.view.child
+	n := t.a.Node(t.id)
+	if n.kind != List {
+		return t.a.Type(0)
 	}
-	return t.a.Type(TypeID(t.a.Node(t.id).data))
+	return t.a.Type(TypeID(n.data))
 }
 
 func (t Type) Len() int {
@@ -77,11 +81,14 @@ func (t Type) At(i int) Type {
 }
 
 func (t Type) Fields() Fields {
-	if t.Kind() != Object {
+	if t.view != nil {
+		if t.view.kind == Object {
+			return Fields{a: t.a, views: t.view.fields}
+		}
 		return Fields{a: t.a}
 	}
-	if t.view != nil {
-		return Fields{a: t.a, views: t.view.fields}
+	if t.a.Node(t.id).kind != Object {
+		return Fields{a: t.a}
 	}
 	return Fields{a: t.a, v: t.a.objectFields(t.id)}
 }
@@ -89,13 +96,51 @@ func (t Type) Fields() Fields {
 func (t Type) MustGetField(name string) FieldView { return t.Fields().MustGet(name) }
 
 func (t Type) Base() Type {
-	if t.Kind() != Refined {
+	if t.view != nil {
+		if t.view.kind == Refined {
+			return t.view.child
+		}
 		return t.a.Type(0)
 	}
-	if t.view != nil {
-		return t.view.child
+	n := t.a.Node(t.id)
+	if n.kind != Refined {
+		return t.a.Type(0)
 	}
-	return t.a.Type(t.a.refinements[t.a.Node(t.id).data].base)
+	return t.a.Type(t.a.refinements[n.data].base)
+}
+
+// Traverse follows object fields through transparent list/refinement wrappers.
+func (t Type) Traverse(path []string) (Type, bool) {
+	if t.Kind() == Invalid {
+		return t.a.Type(0), false
+	}
+	for _, name := range path {
+		for {
+			if t.view != nil {
+				if t.view.kind == List || t.view.kind == Refined {
+					t = t.view.child
+					continue
+				}
+			} else {
+				n := t.a.Node(t.id)
+				switch n.kind {
+				case List:
+					t.id = TypeID(n.data)
+					continue
+				case Refined:
+					t.id = t.a.refinements[n.data].base
+					continue
+				}
+			}
+			break
+		}
+		field, ok := t.Fields().Get(name)
+		if !ok {
+			return t.a.Type(0), false
+		}
+		t = field.Type()
+	}
+	return t, true
 }
 
 // Variants returns the members of a sum type. It returns nil for non-sum types.
@@ -239,11 +284,28 @@ func (f Fields) At(i int) FieldView {
 }
 
 func (f Fields) Get(name string) (FieldView, bool) {
-	i := sort.Search(f.Len(), func(i int) bool { return f.At(i).Name() >= name })
-	if i == f.Len() || f.At(i).Name() != name {
+	i := f.index(name)
+	if i < 0 {
 		return FieldView{}, false
 	}
 	return f.At(i), true
+}
+
+// Search the field name.
+// NOTE(i4k): for performance reasons, this method avoid constructing Field views in each lookup.
+func (f *Fields) index(name string) int {
+	if f.views != nil {
+		i := sort.Search(len(f.views), func(i int) bool { return f.views[i].Name() >= name })
+		if i < len(f.views) && f.views[i].Name() == name {
+			return i
+		}
+		return -1
+	}
+	i := sort.Search(len(f.v), func(i int) bool { return f.a.StringValue(f.v[i].Name) >= name })
+	if i < len(f.v) && f.a.StringValue(f.v[i].Name) == name {
+		return i
+	}
+	return -1
 }
 
 func (f Fields) MustGet(name string) FieldView {

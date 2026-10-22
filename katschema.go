@@ -219,28 +219,11 @@ func (t Type) Base() (Type, bool) {
 //
 // Then `a.b` and `c.d` both return 1.
 func (t Type) Traverse(path Path) (Type, bool) {
-	if t.Kind() == Invalid {
+	ref, ok := t.ref.Traverse(path)
+	if !ok {
 		return Type{}, false
 	}
-	for _, name := range path {
-		for {
-			if base, ok := t.Base(); ok {
-				t = base
-				continue
-			}
-			if element, ok := t.Element(); ok {
-				t = element
-				continue
-			}
-			break
-		}
-		field, ok := t.Field(name)
-		if !ok {
-			return Type{}, false
-		}
-		t = field.Type
-	}
-	return t, true
+	return Type{ref: ref}, true
 }
 
 // Fingerprint identifies the complete definition, including metadata and names.

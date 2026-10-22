@@ -2,7 +2,6 @@ package compiled
 
 import (
 	"math/big"
-	"sort"
 	"strconv"
 	"unicode/utf8"
 
@@ -25,7 +24,11 @@ func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
 func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
 	a := typ.a
 	n := a.Node(typ.id)
-	switch typ.Kind() {
+	kind := n.kind
+	if typ.view != nil {
+		kind = typ.view.kind
+	}
+	switch kind {
 	case Any:
 		return t.Node(value).Kind().IsValue() && t.Node(value).Kind() != ast.Schema
 	case Invalid, Never:
@@ -68,8 +71,12 @@ func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
 		if t.Node(value).Kind() != ast.List {
 			return false
 		}
+		element := a.Type(TypeID(n.data))
+		if typ.view != nil {
+			element = typ.view.child
+		}
 		for _, v := range t.List(value) {
-			if !typ.Element().Valid(t, v) {
+			if !element.Valid(t, v) {
 				return false
 			}
 		}
@@ -78,12 +85,12 @@ func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
 		if t.Node(value).Kind() != ast.List {
 			return false
 		}
-		got := t.List(value)
-		if typ.Len() != len(got) {
+		want, got := a.tuple(typ.id), t.List(value)
+		if len(want) != len(got) {
 			return false
 		}
 		for i := range got {
-			if !typ.At(i).Valid(t, got[i]) {
+			if !a.valid(want[i], t, got[i]) {
 				return false
 			}
 		}
@@ -98,9 +105,14 @@ func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
 	case Object:
 		return typ.validObject(t, value)
 	case Refined:
-		return typ.Base().Valid(t, value) && a.validConstraint(typ.constraint().id, t, value)
+		r := a.refinements[n.data]
+		base := a.Type(r.base)
+		if typ.view != nil {
+			base = typ.view.child
+		}
+		return base.Valid(t, value) && a.validConstraint(r.constraint, t, value)
 	default:
-		panic(typ.Kind())
+		panic(kind)
 	}
 }
 
@@ -108,16 +120,22 @@ func (typ Type) validObject(t *ast.Tree, value ast.NodeID) bool {
 	if t.Node(value).Kind() != ast.Object {
 		return false
 	}
-	want := typ.Fields()
+	want := Fields{a: typ.a}
+	if typ.view != nil {
+		want.views = typ.view.fields
+	} else {
+		want.v = typ.a.objectFields(typ.id)
+	}
+	length := want.Len()
 	got := t.Object(value)
-	if len(got) > want.Len() {
+	if len(got) > length {
 		return false
 	}
 
 	var small uint64
 	var large []uint64
-	if want.Len() > 64 {
-		large = make([]uint64, (want.Len()+63)/64)
+	if length > 64 {
+		large = make([]uint64, (length+63)/64)
 	}
 	mark := func(i int) bool {
 		if large == nil {
@@ -145,18 +163,28 @@ func (typ Type) validObject(t *ast.Tree, value ast.NodeID) bool {
 
 	for _, f := range got {
 		name := t.Text(f.Name)
-		i := sort.Search(want.Len(), func(i int) bool {
-			return want.At(i).Name() >= name
-		})
-		if i == want.Len() || want.At(i).Name() != name || !mark(i) {
+		i := want.index(name)
+		if i < 0 || !mark(i) {
 			return false
 		}
-		if !want.At(i).Type().Valid(t, f.Value) {
+		var child Type
+		if want.views != nil {
+			child = want.views[i].Type()
+		} else {
+			child = want.a.Type(want.v[i].Value)
+		}
+		if !child.Valid(t, f.Value) {
 			return false
 		}
 	}
-	for i := 0; i < want.Len(); i++ {
-		if !want.At(i).Optional() && !seen(i) {
+	for i := 0; i < length; i++ {
+		var optional bool
+		if want.views != nil {
+			optional = want.views[i].Optional()
+		} else {
+			optional = want.v[i].Optional()
+		}
+		if !optional && !seen(i) {
 			return false
 		}
 	}
