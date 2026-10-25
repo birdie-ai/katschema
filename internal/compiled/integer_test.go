@@ -15,7 +15,7 @@ var google = "1" + strings.Repeat("0", 100)
 
 func compileRawInt(t *testing.T, a *Arena, raw string) TypeID {
 	t.Helper()
-	var z token.Span
+	z := token.UnknownSpan()
 	tree := ast.New()
 	root := tree.AddInt(raw, z)
 	id, err := Compile(a, tree, root)

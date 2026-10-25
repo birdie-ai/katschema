@@ -11,7 +11,7 @@ import (
 func TestRealLiteralInterningIsExact(t *testing.T) {
 	t.Parallel()
 
-	var s token.Span
+	s := token.UnknownSpan()
 	tree := ast.New()
 	a := NewArena()
 

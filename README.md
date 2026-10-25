@@ -664,3 +664,6 @@ is equivalent to
 # Formal specification
 
 Check the [Ohm grammar](./grammar.ohm).
+
+Install its checker with `npm ci --prefix grammar`, then run `make check/grammar`. 
+These checks cover grammar regressions, all schema examples, and the valid JSON fixtures.

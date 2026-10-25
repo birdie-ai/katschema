@@ -344,10 +344,8 @@ const (
 )
 
 func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
-	var (
-		z   token.Span
-		err error
-	)
+	z := token.UnknownSpan()
+	var err error
 
 	switch v.kind {
 	case valueNull:
@@ -403,7 +401,7 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 }
 
 func emitSchema(t *ast.Tree, s schemaSpec) (ast.NodeID, error) {
-	var z token.Span
+	z := token.UnknownSpan()
 
 	typ, err := emitRef(t, s.ref)
 	if err != nil {
@@ -422,7 +420,7 @@ func emitSchema(t *ast.Tree, s schemaSpec) (ast.NodeID, error) {
 }
 
 func emitRef(t *ast.Tree, r typeRef) (ast.NodeID, error) {
-	var z token.Span
+	z := token.UnknownSpan()
 
 	switch r.kind {
 	case refName:
@@ -454,7 +452,7 @@ func emitRef(t *ast.Tree, r typeRef) (ast.NodeID, error) {
 }
 
 func emitClause(t *ast.Tree, c Clause) (ast.NodeID, error) {
-	var z token.Span
+	z := token.UnknownSpan()
 
 	switch c.kind {
 	case clauseConstraint:
@@ -481,7 +479,7 @@ func emitClause(t *ast.Tree, c Clause) (ast.NodeID, error) {
 }
 
 func emitExpr(t *ast.Tree, e Expr) (ast.NodeID, error) {
-	var z token.Span
+	z := token.UnknownSpan()
 
 	switch e.kind {
 	case exprValue:

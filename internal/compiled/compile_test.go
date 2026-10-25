@@ -23,7 +23,7 @@ func TestCompileIntern(t *testing.T) {
 		wantLiteral  bool
 	}
 
-	var z token.Span
+	z := token.UnknownSpan()
 
 	for _, tc := range []testcase{
 		{

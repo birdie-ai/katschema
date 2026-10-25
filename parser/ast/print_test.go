@@ -17,7 +17,7 @@ func TestPrint(t *testing.T) {
 		want string
 	}
 
-	var z token.Span
+	z := token.UnknownSpan()
 
 	for _, tc := range []testcase{
 		{
@@ -79,31 +79,45 @@ func TestPrint(t *testing.T) {
 			root: func(a *Tree) NodeID {
 				return a.AddObject([]Field{
 					{
-						Name:  a.AddText("str"),
-						Value: a.AddString("test", z),
+						Span:     z,
+						NameSpan: z,
+						Name:     a.AddText("str"),
+						Value:    a.AddString("test", z),
 					},
 					{
-						Name:  a.AddText("int"),
-						Value: a.AddInt("1337", z),
+						Span:     z,
+						NameSpan: z,
+						Name:     a.AddText("int"),
+						Value:    a.AddInt("1337", z),
 					},
 					{
-						Name:  a.AddText("null"),
-						Value: a.AddNull(z),
+						Span:     z,
+						NameSpan: z,
+						Name:     a.AddText("null"),
+						Value:    a.AddNull(z),
 					},
 					{
-						Name:  a.AddText("float"),
-						Value: a.AddDecimal("-3.141519", z),
+						Span:     z,
+						NameSpan: z,
+						Name:     a.AddText("float"),
+						Value:    a.AddDecimal("-3.141519", z),
 					},
 					{
-						Name:  a.AddText("list"),
-						Value: a.AddList([]NodeID{a.AddString("str", z), a.AddInt("1337", z)}, z),
+						Span:     z,
+						NameSpan: z,
+						Name:     a.AddText("list"),
+						Value:    a.AddList([]NodeID{a.AddString("str", z), a.AddInt("1337", z)}, z),
 					},
 					{
-						Name:  a.AddText("type"),
-						Value: a.AddSchema(a.AddName("uuid", z), nil, z),
+						Span:     z,
+						NameSpan: z,
+						Name:     a.AddText("type"),
+						Value:    a.AddSchema(a.AddName("uuid", z), nil, z),
 					},
 					{
-						Name: a.AddText("obj"),
+						Span:     z,
+						NameSpan: z,
+						Name:     a.AddText("obj"),
 						Value: a.AddObject([]Field{
 							a.NewField("str", a.AddString("test", z), z, z),
 							a.NewField("int", a.AddInt("1337", z), z, z),
@@ -295,8 +309,10 @@ func TestPrint(t *testing.T) {
 					a.AddSchema(
 						a.AddObject([]Field{
 							{
-								Name:  a.AddText("str"),
-								Value: a.AddString("test", z),
+								Span:     z,
+								NameSpan: z,
+								Name:     a.AddText("str"),
+								Value:    a.AddString("test", z),
 							},
 						}, z), nil, z),
 					a.AddSchema(a.AddName("string", z), nil, z),
@@ -376,31 +392,43 @@ func BenchmarkPrint(b *testing.B) {
 }
 
 func benchValue() (NodeID, *Tree) {
-	var z token.Span
+	z := token.UnknownSpan()
 	a := New()
 	return a.AddObject([]Field{
 		{
-			Name:  a.AddText("str"),
-			Value: a.AddString("test", z),
+			Span:     z,
+			NameSpan: z,
+			Name:     a.AddText("str"),
+			Value:    a.AddString("test", z),
 		},
 		{
-			Name:  a.AddText("int"),
-			Value: a.AddInt("1337", z),
+			Span:     z,
+			NameSpan: z,
+			Name:     a.AddText("int"),
+			Value:    a.AddInt("1337", z),
 		},
 		{
-			Name:  a.AddText("null"),
-			Value: a.AddNull(z),
+			Span:     z,
+			NameSpan: z,
+			Name:     a.AddText("null"),
+			Value:    a.AddNull(z),
 		},
 		{
-			Name:  a.AddText("float"),
-			Value: a.AddDecimal("-3.141519", z),
+			Span:     z,
+			NameSpan: z,
+			Name:     a.AddText("float"),
+			Value:    a.AddDecimal("-3.141519", z),
 		},
 		{
-			Name:  a.AddText("list"),
-			Value: a.AddList([]NodeID{a.AddString("str", z), a.AddInt("1337", z)}, z),
+			Span:     z,
+			NameSpan: z,
+			Name:     a.AddText("list"),
+			Value:    a.AddList([]NodeID{a.AddString("str", z), a.AddInt("1337", z)}, z),
 		},
 		{
-			Name: a.AddText("obj"),
+			Span:     z,
+			NameSpan: z,
+			Name:     a.AddText("obj"),
 			Value: a.AddObject([]Field{
 				a.NewField("str", a.AddString("test", z), z, z),
 				a.NewField("int", a.AddInt("1337", z), z, z),

@@ -145,15 +145,12 @@ Katschema {
   Pair =
     String ":" Value
 
-  // NOTE(i4k): the grammar below allows for multiple surplus comma.
-  // I fixed this but it complicates too much so better keep it simple here and enforce only a single surplus comma
-  // in the recursive descent parser.
   Array =
-  	"[" Value ("," Value*)* "]" -- nonEmpty
+    "[" Value ("," Value)* ","? "]" -- nonEmpty
     | "[" "]" -- empty
 
   Tuple =
-  	"#{" Value ("," Value*)* "}" -- nonEmpty
+    "#{" Value ("," Value)* ","? "}" -- nonEmpty
     | "#{" "}" -- empty
   
   String (String) =

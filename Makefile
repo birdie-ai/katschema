@@ -15,7 +15,7 @@ test/bench:
 
 .PHONY: check/grammar
 check/grammar:
-	node grammar/check.js grammar.ohm grammar/examples/*
+	node --test grammar/grammar.test.js
 
 .PHONY: test/coverage
 test/coverage:
