@@ -21,12 +21,20 @@ Katschema {
     | False
     | Null
     
-  Schema = 
-  	"(" Type  ("," Clause)* ")" ("|" Schema)*
+  Schema =
+    SchemaAtom ("|" SchemaAtom)*
+
+  SchemaAtom =
+    "(" Type ("," Clause)* ")"
 
   Type =
     Ref
-    | Value
+    | Null
+    | Collection
+    | SchemaSum
+
+  SchemaSum =
+    SchemaAtom "|" SchemaAtom ("|" SchemaAtom)*
     
   Clause =
     LogicalExpr
@@ -119,9 +127,13 @@ Katschema {
   	ident
     
   Ref
-    = (".")? ident ("." ident)*
+    = "." refPart ("." refPart)* -- path
+    | ident ("." refPart)* -- name
 
   ident
+    = ~keyword refPart
+
+  refPart
     = identStart identPart*
     
   identStart
@@ -133,14 +145,11 @@ Katschema {
     | digit
     
   keyword
-    = "true"
-    | "false"
-    | "null"
-    | "in"
+    = ("true" | "false" | "null" | "in") ~identPart
     
   Object =
     "{" "}" -- empty
-    | "{" Pair ("," Pair)* "}" -- nonEmpty
+    | "{" Pair ("," Pair)* ","? "}" -- nonEmpty
 
   Pair =
     String ":" Value
@@ -160,7 +169,7 @@ Katschema {
     "\"" doubleStringCharacter* "\""
 
   doubleStringCharacter (character) =
-    ~("\"" | "\\") any -- nonEscaped
+    ~("\"" | "\\" | "\u0000".."\u001f") any -- nonEscaped
     | "\\" escapeSequence -- escaped
 
   escapeSequence =

@@ -13,9 +13,10 @@ func TestDSL(t *testing.T) {
 	t.Parallel()
 
 	type testcase struct {
-		name string
-		root Value
-		want string
+		name    string
+		root    Value
+		want    string
+		wantErr string
 	}
 
 	for _, tc := range []testcase{
@@ -92,9 +93,9 @@ func TestDSL(t *testing.T) {
 			want: `(int,(x+1)<100)`,
 		},
 		{
-			name: "With() wraps literal values in a schema",
-			root: With(LitBool(true), Flag("optional")),
-			want: `(true,optional)`,
+			name:    "With() rejects scalar type references",
+			root:    With(LitBool(true), Flag("optional")),
+			wantErr: "ks: invalid type reference",
 		},
 		{
 			name: "With() append clauses to existent schema",
@@ -114,6 +115,12 @@ func TestDSL(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tree, root, err := Build(tc.root)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("Build() error = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
