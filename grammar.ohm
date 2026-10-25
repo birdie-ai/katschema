@@ -29,7 +29,6 @@ Katschema {
 
   Type =
     Ref
-    | Null
     | Collection
     | SchemaSum
 

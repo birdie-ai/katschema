@@ -149,13 +149,6 @@ func TestPrint(t *testing.T) {
 			want: `(int)`,
 		},
 		{
-			name: "null type schema",
-			root: func(a *Tree) NodeID {
-				return a.AddSchema(a.AddName("null", z), nil, z)
-			},
-			want: `(null)`,
-		},
-		{
 			name: "real type schema",
 			root: func(a *Tree) NodeID {
 				return a.AddSchema(a.AddName("real", z), nil, z)

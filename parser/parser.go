@@ -258,12 +258,6 @@ func (p *parser) typeAtom() (ast.NodeID, error) {
 	switch p.tok.kind {
 	case token.Ident, token.Dot:
 		return p.ref()
-	case token.Null:
-		x := p.tok
-		if err := p.next(); err != nil {
-			return 0, err
-		}
-		return p.tree.AddName("null", x.span), nil
 	case token.LBrace:
 		return p.object()
 	case token.LBrack:

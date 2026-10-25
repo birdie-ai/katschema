@@ -426,6 +426,9 @@ func emitRef(t *ast.Tree, r typeRef) (ast.NodeID, error) {
 		if r.name == "" {
 			return 0, fmt.Errorf("ks: empty type name")
 		}
+		if r.name == "null" || r.name == "true" || r.name == "false" {
+			return 0, fmt.Errorf("ks: invalid type reference")
+		}
 		return t.AddName(r.name, z), nil
 	case refPath:
 		if len(r.path) == 0 {
