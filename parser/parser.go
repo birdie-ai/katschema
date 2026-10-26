@@ -247,11 +247,28 @@ func (p *parser) schema() (ast.NodeID, error) {
 	if err != nil {
 		return 0, err
 	}
+	var clauses []ast.NodeID
+	for {
+		comma, err := p.accept(token.Comma)
+		if err != nil {
+			return 0, err
+		}
+		if !comma {
+			break
+		}
+
+		clause, err := p.clause()
+		if err != nil {
+			return 0, err
+		}
+		clauses = append(clauses, clause)
+
+	}
 	close, err := p.expect(token.RParen)
 	if err != nil {
 		return 0, err
 	}
-	return p.tree.AddSchema(typ, nil, token.Span{Start: open.span.Start, End: close.span.End}), nil
+	return p.tree.AddSchema(typ, clauses, token.Span{Start: open.span.Start, End: close.span.End}), nil
 }
 
 func (p *parser) typeAtom() (ast.NodeID, error) {
@@ -305,4 +322,24 @@ func (p *parser) ref() (ast.NodeID, error) {
 		return p.tree.AddPath(parts, span), nil
 	}
 	return p.tree.AddName(strings.Join(names, "."), span), nil
+}
+
+func (p *parser) clause() (ast.NodeID, error) {
+	name, err := p.expect(token.Ident)
+	if err != nil {
+		return 0, err
+	}
+	assign, err := p.accept(token.Assign)
+	if err != nil {
+		return 0, err
+	}
+	if !assign {
+		return p.tree.AddAttr(p.text(name), 0, false, name.span, name.span), nil
+	}
+	value, err := p.jsonValue()
+	if err != nil {
+		return 0, err
+	}
+	span := token.Span{Start: name.span.Start, End: p.tree.Node(value).Span().End}
+	return p.tree.AddAttr(p.text(name), value, true, span, name.span), nil
 }
