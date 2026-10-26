@@ -132,8 +132,15 @@ const (
 	Group
 )
 
-func (n Node) Kind() Kind       { return n.kind }
-func (n Node) Span() token.Span { return n.span }
+func (n Node) Kind() Kind { return n.kind }
+
+// Span returns the source range, or an unknown span for an invalid node.
+func (n Node) Span() token.Span {
+	if n.kind == Invalid {
+		return token.UnknownSpan()
+	}
+	return n.span
+}
 
 func New() *Tree {
 	t := new(Tree)

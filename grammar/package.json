@@ -1,6 +1,9 @@
 {
   "name": "grammar-check",
   "private": true,
+  "scripts": {
+    "test": "node --test grammar.test.js"
+  },
   "engines": {
     "node": ">=20 <21"
   },

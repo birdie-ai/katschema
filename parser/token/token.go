@@ -1,40 +1,35 @@
 // Package token defines lexical tokens and source positions used by the parser.
 package token
 
-// Pos is a byte position plus one. Zero means no position.
-type Pos uint32
+// Pos is a zero-based byte offset. Negative positions are invalid.
+type Pos int
 
-const NoPos Pos = 0
+const NoPos Pos = -1
 
 // At converts a zero-based byte offset to a Pos.
-func At(off int) Pos {
-	if off < 0 {
-		return NoPos
-	}
-	return Pos(off) + 1
-}
+func At(off int) Pos { return Pos(off) }
 
-// Offset returns the zero-based byte offset for p, or -1 for NoPos.
-func (p Pos) Offset() int {
-	if p == NoPos {
-		return -1
-	}
-	return int(p - 1)
-}
+// Offset returns the zero-based byte offset, preserving negative positions.
+func (p Pos) Offset() int { return int(p) }
 
 // Span is a half-open source range [Start, End).
-// A zero Span is unknown, as is common for synthetic AST nodes.
+// Its zero value is the valid empty range [0, 0).
 type Span struct {
 	Start Pos
 	End   Pos
 }
 
 func NewSpan(start, end int) Span {
-	return Span{Start: At(start), End: At(end)}
+	return Span{Start: Pos(start), End: Pos(end)}
+}
+
+// UnknownSpan returns the canonical span for synthetic or missing nodes.
+func UnknownSpan() Span {
+	return Span{Start: NoPos, End: NoPos}
 }
 
 func (s Span) Valid() bool {
-	return s.Start != NoPos && s.End != NoPos && s.Start <= s.End
+	return s.Start >= 0 && s.Start <= s.End
 }
 
 // Kind of the lexical token.
@@ -84,6 +79,9 @@ const (
 	Mod // %
 
 	Pipe // |
+
+	TupleOpen // #{
+	Comment
 )
 
 func (k Kind) String() string {
@@ -158,6 +156,10 @@ func (k Kind) String() string {
 		return "%"
 	case Pipe:
 		return "|"
+	case TupleOpen:
+		return "#{"
+	case Comment:
+		return "comment"
 	}
 	return "ILLEGAL"
 }
