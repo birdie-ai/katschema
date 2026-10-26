@@ -181,8 +181,7 @@ func Sum(elems ...Value) Value {
 	return Value{kind: valueSum, elems: clone(elems)}
 }
 
-// With adds clauses to a value. If the value is already a schema, then it append the
-// provided clauses to the schema otherwise it wraps the value in a literal schema.
+// With adds clauses to a schema or structural type.
 func With(v Value, clauses ...Clause) Value {
 	if v.kind == valueSchema && v.schema != nil {
 		s := *v.schema
@@ -427,6 +426,9 @@ func emitRef(t *ast.Tree, r typeRef) (ast.NodeID, error) {
 		if r.name == "" {
 			return 0, fmt.Errorf("ks: empty type name")
 		}
+		if r.name == "null" || r.name == "true" || r.name == "false" {
+			return 0, fmt.Errorf("ks: invalid type reference")
+		}
 		return t.AddName(r.name, z), nil
 	case refPath:
 		if len(r.path) == 0 {
@@ -438,14 +440,12 @@ func emitRef(t *ast.Tree, r typeRef) (ast.NodeID, error) {
 		}
 		return t.AddPath(parts, z), nil
 	case refValue:
-		if r.value == nil {
-			return 0, fmt.Errorf("ks: invalid type reference")
+		if r.value != nil {
+			switch r.value.kind {
+			case valueArray, valueObject, valueSum:
+				return emitValue(t, *r.value)
+			}
 		}
-		id, err := emitValue(t, *r.value)
-		if err != nil {
-			return 0, err
-		}
-		return id, nil
 	}
 
 	return 0, fmt.Errorf("ks: invalid type reference")

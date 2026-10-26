@@ -142,25 +142,18 @@ func TestPrint(t *testing.T) {
 			want: `[(string)]`,
 		},
 		{
-			name: "literal integer schema",
+			name: "integer type schema",
 			root: func(a *Tree) NodeID {
-				return a.AddSchema(a.AddInt("1", z), nil, z)
+				return a.AddSchema(a.AddName("int", z), nil, z)
 			},
-			want: `(1)`,
+			want: `(int)`,
 		},
 		{
-			name: "literal null schema",
+			name: "real type schema",
 			root: func(a *Tree) NodeID {
-				return a.AddSchema(a.AddNull(z), nil, z)
+				return a.AddSchema(a.AddName("real", z), nil, z)
 			},
-			want: `(null)`,
-		},
-		{
-			name: "literal float schema",
-			root: func(a *Tree) NodeID {
-				return a.AddSchema(a.AddDecimal("3.14", z), nil, z)
-			},
-			want: `(3.14)`,
+			want: `(real)`,
 		},
 		{
 			name: "literal list schema",

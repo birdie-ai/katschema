@@ -163,7 +163,8 @@ The `(` and `)` wraps the schema language. It has the format below:
 The *type reference* can be:
 - primitive type name
 - custom type name
-- traversal to a value in the same object.
+- traversal to a value in the same object
+- structural object or list type.
 
 The clauses can be:
 - contraint expressions

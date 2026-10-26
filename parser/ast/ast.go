@@ -23,8 +23,9 @@ type (
 
 	// Tree is an arena-backed AST tree.
 	Tree struct {
-		nodes []Node
-		texts []string
+		nodes    []Node
+		texts    []string
+		comments []Comment
 
 		refs []NodeID
 
@@ -46,6 +47,11 @@ type (
 	PathPart struct {
 		Span token.Span
 		Name TextID
+	}
+
+	Comment struct {
+		Span token.Span
+		Text TextID
 	}
 
 	SchemaData struct {
@@ -172,6 +178,7 @@ func (t *Tree) Reset() {
 	} else {
 		t.texts = t.texts[:1]
 	}
+	t.comments = t.comments[:0]
 	t.refs = t.refs[:0]
 	t.arrays = t.arrays[:0]
 	t.objects = t.objects[:0]
@@ -218,6 +225,15 @@ func (t *Tree) AddText(s string) TextID {
 	id := TextID(len(t.texts))
 	t.texts = append(t.texts, s)
 	return id
+}
+
+func (t *Tree) AddComment(text string, span token.Span) {
+	t.comments = append(t.comments, Comment{Span: span, Text: t.AddText(text)})
+}
+
+// Comments returns the tree's comments in insertion order. The slice is owned by the tree.
+func (t *Tree) Comments() []Comment {
+	return t.comments
 }
 
 func (t *Tree) addNode(k Kind, span token.Span, data uint32) NodeID {

@@ -1,9 +1,9 @@
 package ast
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 
 	"github.com/birdie-ai/katschema/parser/token"
 )
@@ -156,7 +156,8 @@ func (p *printer) string(s string) {
 	if p.err != nil {
 		return
 	}
-	p.write(strconv.Quote(s))
+	b, _ := json.Marshal(s)
+	_, p.err = p.w.Write(b)
 }
 
 func (p *printer) write(s string) {
