@@ -128,7 +128,6 @@ func TestParseErrors(t *testing.T) {
 		{src: "0 /* unterminated"},
 		{src: "()"},
 		{src: "(int"},
-		{src: "(int,)"},
 		{src: "(in)"},
 		{src: "(int int)"},
 		{src: "(true)"},
@@ -243,6 +242,10 @@ func TestParseClauses(t *testing.T) {
 	for _, tc := range []testcase{
 		{
 			src: "(int,optional)",
+			dsl: ks.Optional(ks.Int()),
+		},
+		{
+			src: "(int,optional,)",
 			dsl: ks.Optional(ks.Int()),
 		},
 		{
