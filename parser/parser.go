@@ -253,16 +253,14 @@ func (p *parser) schema() (ast.NodeID, error) {
 		if err != nil {
 			return 0, err
 		}
-		if !comma {
+		if !comma || p.tok.kind == token.RParen {
 			break
 		}
-
 		clause, err := p.clause()
 		if err != nil {
 			return 0, err
 		}
 		clauses = append(clauses, clause)
-
 	}
 	close, err := p.expect(token.RParen)
 	if err != nil {
