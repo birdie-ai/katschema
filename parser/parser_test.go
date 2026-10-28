@@ -128,7 +128,6 @@ func TestParseErrors(t *testing.T) {
 		{src: "0 /* unterminated"},
 		{src: "()"},
 		{src: "(int"},
-		{src: "(int,)"},
 		{src: "(in)"},
 		{src: "(int int)"},
 		{src: "(true)"},
@@ -232,6 +231,108 @@ func TestParseCompile(t *testing.T) {
 	}
 }
 
+func TestParseClauses(t *testing.T) {
+	t.Parallel()
+
+	type testcase struct {
+		src string
+		dsl ks.Value
+	}
+
+	for _, tc := range []testcase{
+		{
+			src: "(int,optional)",
+			dsl: ks.Optional(ks.Int()),
+		},
+		{
+			src: "(int,optional,)",
+			dsl: ks.Optional(ks.Int()),
+		},
+		{
+			src: "(int,optional=false)",
+			dsl: ks.With(
+				ks.Int(),
+				ks.Attr("optional", ks.BoolExpr(false)),
+			),
+		},
+		{
+			src: "(string,pk,optional)",
+			dsl: ks.With(
+				ks.String(),
+				ks.Flag("pk"),
+				ks.Flag("optional"),
+			),
+		},
+		{
+			src: `(string,mapping="numbers")`,
+			dsl: ks.With(
+				ks.String(),
+				ks.Attr("mapping", ks.StrExpr("numbers")),
+			),
+		},
+		{
+			src: "(int,offset=-1)",
+			dsl: ks.With(
+				ks.Int(),
+				ks.Attr("offset", ks.IntExpr(-1)),
+			),
+		},
+		{
+			src: "(real,scale=2.50)",
+			dsl: ks.With(
+				ks.Real(),
+				ks.Attr("scale", ks.DecimalExpr("2.50")),
+			),
+		},
+		{
+			src: "(int,fallback=null)",
+			dsl: ks.With(
+				ks.Int(),
+				ks.Attr("fallback", ks.NullExpr()),
+			),
+		},
+		{
+			src: `(string,owner={"team":"core"})`,
+			dsl: ks.With(
+				ks.String(),
+				ks.Attr("owner", ks.ValueExpr(ks.Object(ks.Field("team", ks.LitString("core"))))),
+			),
+		},
+		{
+			src: `({"id":(string)},pks=["id"])`,
+			dsl: ks.With(
+				ks.Object(ks.Field("id", ks.String())),
+				ks.Attr("pks", ks.ListExpr(ks.LitString("id"))),
+			),
+		},
+		{
+			src: `{"age":(int,optional),"tags":([(string)],optional)}`,
+			dsl: ks.Object(
+				ks.Field("age", ks.Optional(ks.Int())),
+				ks.Field("tags", ks.Optional(ks.List(ks.String()))),
+			),
+		},
+		{
+			src: "(int, /* why */ optional // tail\n)",
+			dsl: ks.Optional(ks.Int()),
+		},
+	} {
+		t.Run(tc.src, func(t *testing.T) {
+			tree, root := parseOK(t, tc.src)
+			dslTree, dslRoot, err := ks.Build(tc.dsl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := printString(t, tree, root)
+			want := printString(t, dslTree, dslRoot)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("parsed tree differs from DSL (-want +got):\n%s", diff)
+			}
+			checkParsePrint(t, tree, root)
+		})
+	}
+}
+
 func parseOK(t testing.TB, src string) (*ast.Tree, ast.NodeID) {
 	t.Helper()
 
@@ -257,6 +358,16 @@ func parseFailure(t testing.TB, src string) *Error {
 		t.Fatalf("invalid syntax error: %#v", err)
 	}
 	return syntax
+}
+
+func printString(t testing.TB, tree *ast.Tree, root ast.NodeID) string {
+	t.Helper()
+
+	var b bytes.Buffer
+	if err := ast.Print(&b, tree, root); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
 }
 
 func checkParsePrint(t testing.TB, tree *ast.Tree, root ast.NodeID) {
