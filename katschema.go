@@ -127,7 +127,7 @@ func (c *Compiler) Compile(ctx context.Context, value ks.Value) (Type, error) {
 }
 
 // CompileAST compiles an existing AST subtree using this compiler's arena and
-// resolver. The caller must provide a non-nil tree.
+// resolver.
 // It does not modify or retain the tree; the caller may reuse or reset
 // the tree after this call. The compiled type remains owned by the compiler's arena.
 func (c *Compiler) CompileAST(ctx context.Context, tree *ast.Tree, root ast.NodeID) (Type, error) {
