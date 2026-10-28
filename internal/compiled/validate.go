@@ -161,22 +161,59 @@ func (typ Type) validAny(t *ast.Tree, value ast.NodeID, inList bool) bool {
 }
 
 func (typ Type) validObject(t *ast.Tree, value ast.NodeID, inList bool) bool {
-	want, got := typ.Fields(), t.Object(value)
-	seen := make(map[string]bool, len(got))
+	want := Fields{a: typ.a}
+	if typ.view != nil {
+		want.views = typ.view.fields
+	} else {
+		want.v = typ.a.objectFields(typ.id)
+	}
+	length := want.Len()
+	got := t.Object(value)
+	if len(got) > length {
+		return false
+	}
+
+	// NOTE(i4k): keep presence tracking on the stack for objects with up to 256 fields,
+	// otherwise use a bitset.
+	var small [4]uint64
+	seen := small[:]
+	if length > len(small)*64 {
+		seen = make([]uint64, (length+63)/64)
+	}
+
 	for _, f := range got {
 		name := t.Text(f.Name)
-		if seen[name] {
+		i := want.index(name)
+		if i < 0 {
 			return false
 		}
-		field, ok := want.Get(name)
-		if !ok || !field.Type().validAST(t, f.Value, inList) {
+		word, bit := i/64, uint64(1)<<uint(i%64)
+		if seen[word]&bit != 0 {
 			return false
 		}
-		seen[name] = true
+		seen[word] |= bit
+		var child Type
+		if want.views != nil {
+			child = want.views[i].Type()
+		} else {
+			child = want.a.Type(want.v[i].Value)
+		}
+		if !child.validAST(t, f.Value, inList) {
+			return false
+		}
 	}
-	for i := 0; i < want.Len(); i++ {
-		field := want.At(i)
-		if !field.Optional() && !seen[field.Name()] {
+	// known, unique fields with equal counts cover every required field.
+	if len(got) == length {
+		return true
+	}
+	for i := 0; i < length; i++ {
+		var optional bool
+		if want.views != nil {
+			optional = want.views[i].Optional()
+		} else {
+			optional = want.v[i].Optional()
+		}
+		if !optional && seen[i/64]&(uint64(1)<<uint(i%64)) == 0 {
 			return false
 		}
 	}
