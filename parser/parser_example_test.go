@@ -15,7 +15,7 @@ func ExampleParse() {
 		"version": 2,
 		"enabled": true,
 		"owner": ({
-			"id": (string, pk), 
+			"id": (string, pk),
 			"name": (string),
 			"email": (string, optional),
 		}),
