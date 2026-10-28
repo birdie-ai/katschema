@@ -87,7 +87,6 @@ func TestLargeObjectViewValidation(t *testing.T) {
 	scoped[32] = ks.Field("f032", ks.LitString("high"))
 	invalid := append([]ks.Member(nil), scoped...)
 	invalid[32] = ks.Field("f032", ks.LitString("unknown"))
-	// Keep the field count at 65 so duplicate rejection exercises the seen bitset.
 	duplicate := append(append([]ks.Member(nil), scoped[1:]...), scoped[64])
 
 	type testcase struct {

@@ -60,6 +60,14 @@ func (a Type) SubtypeOf(b Type) bool {
 		}
 		return false
 	}
+	if bk == Refined && b.constraint().data().flags == constraintLen {
+		if bounds, ok := a.containerLength(); ok {
+			d := b.constraint().data()
+			return a.SubtypeOf(b.Base()) &&
+				lowerIntStronger(bounds.flags, bounds.min, d.lenFlags, d.lenMin) &&
+				upperIntStronger(bounds.flags, bounds.max, d.lenFlags, d.lenMax)
+		}
+	}
 	if ak == Refined {
 		ab := a.Base()
 		if bk == Refined && ab.Equivalent(b.Base()) {
@@ -109,6 +117,43 @@ func (a Type) SubtypeOf(b Type) bool {
 		return bk == Object && a.objectSubtype(b)
 	default:
 		panic(ak)
+	}
+}
+
+func (t Type) containerLength() (lenBounds, bool) {
+	switch t.Kind() {
+	case List:
+		return lenBounds{flags: hasMin}, true
+	case Tuple:
+		n := int64(t.Len())
+		return lenBounds{flags: hasMin | hasMax, min: n, max: n}, true
+	case Object:
+		fields := t.Fields()
+		bounds := lenBounds{flags: hasMin | hasMax, max: int64(fields.Len())}
+		for i := 0; i < fields.Len(); i++ {
+			if !fields.At(i).Optional() {
+				bounds.min++
+			}
+		}
+		return bounds, true
+	case Refined:
+		bounds, ok := t.Base().containerLength()
+		if !ok {
+			return lenBounds{}, false
+		}
+		d := t.constraint().data()
+		if d.flags&constraintLen != 0 {
+			if d.lenFlags&hasMin != 0 && d.lenMin > bounds.min {
+				bounds.min = d.lenMin
+			}
+			if d.lenFlags&hasMax != 0 && (bounds.flags&hasMax == 0 || d.lenMax < bounds.max) {
+				bounds.flags |= hasMax
+				bounds.max = d.lenMax
+			}
+		}
+		return bounds, true
+	default:
+		return lenBounds{}, false
 	}
 }
 
@@ -209,15 +254,25 @@ func (c constraintRef) accepts(atom Type) bool {
 		}
 	}
 	if d.flags&constraintLen != 0 {
-		if kind != StringAtom {
+		var length int64
+		switch kind {
+		case StringAtom:
+			length = int64(utf8.RuneCountInString(atom.a.StringValue(StringID(atom.a.Node(atom.id).data))))
+		case Tuple, Object:
+			length = int64(atom.Len())
+		default:
 			return false
 		}
-		length := int64(utf8.RuneCountInString(atom.a.StringValue(StringID(atom.a.Node(atom.id).data))))
 		if !checkIntBounds(length, d.lenFlags, d.lenMin, d.lenMax) {
 			return false
 		}
 	}
 	if d.flags&constraintEnum != 0 {
+		switch kind {
+		case Null, BoolAtom, IntAtom, RealAtom, StringAtom:
+		default:
+			return false
+		}
 		for _, id := range c.a.constraintEnums[d.enum.off : d.enum.off+d.enum.len] {
 			if compareAtoms(atom, c.a.Type(id)) == 0 {
 				return true

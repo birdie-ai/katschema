@@ -7,21 +7,31 @@ import (
 
 	"github.com/birdie-ai/katschema/math/decimal"
 	"github.com/birdie-ai/katschema/parser/ast"
-	"github.com/birdie-ai/katschema/parser/token"
 )
 
-// Valid reports whether the literal AST rooted at value is accepted by typ.
-// The AST must contain data values, not schema expressions.
+// Valid reports whether the AST rooted at value is accepted by typ.
 func (a *Arena) Valid(typ TypeID, values *ast.Tree, value ast.NodeID) bool {
-	return a.valid(typ, values, value)
+	return a.Type(typ).Valid(values, value)
 }
 
-func (a *Arena) valid(typ TypeID, t *ast.Tree, value ast.NodeID) bool {
-	return a.Type(typ).Valid(t, value)
-}
-
-// Valid checks the effective type view, retaining each child's owning arena.
+// Valid validates literal AST nodes.
 func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
+	return typ.validAST(t, value, false)
+}
+
+func (typ Type) validAST(t *ast.Tree, value ast.NodeID, inList bool) bool {
+	valueKind := t.Node(value).Kind()
+	switch valueKind {
+	case ast.Schema:
+		if inList {
+			return false
+		}
+		fallthrough
+	case ast.Sum:
+		values := NewArena()
+		id, err := Compile(values, t, value)
+		return err == nil && typ.ValidType(values.Type(id))
+	}
 	a := typ.a
 	n := a.Node(typ.id)
 	kind := n.kind
@@ -30,27 +40,27 @@ func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
 	}
 	switch kind {
 	case Any:
-		return t.Node(value).Kind().IsValue() && t.Node(value).Kind() != ast.Schema
+		return typ.validAny(t, value, inList)
 	case Invalid, Never:
 		return false
 	case Null:
-		return t.Node(value).Kind() == ast.Null
+		return valueKind == ast.Null
 	case Bool:
-		return t.Node(value).Kind() == ast.Bool
+		return valueKind == ast.Bool
 	case Int:
 		return astInt(t, value)
 	case Real:
 		return astReal(t, value)
 	case String:
-		return t.Node(value).Kind() == ast.String
+		return valueKind == ast.String
 	case BoolAtom:
-		return t.Node(value).Kind() == ast.Bool && t.Bool(value) == (n.data != 0)
+		return valueKind == ast.Bool && t.Bool(value) == (n.data != 0)
 	case IntAtom:
 		if n.data > 0 {
 			v, ok := astInt64(t, value)
 			return ok && v == a.ints[n.data]
 		}
-		if t.Node(value).Kind() != ast.Int {
+		if valueKind != ast.Int {
 			return false
 		}
 		var v big.Int
@@ -66,9 +76,9 @@ func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
 		want, ok := a.realNumber(typ.id)
 		return ok && compareDecimalNumbers(got, want) == 0
 	case StringAtom:
-		return t.Node(value).Kind() == ast.String && t.String(value) == a.StringValue(StringID(n.data))
+		return valueKind == ast.String && t.String(value) == a.StringValue(StringID(n.data))
 	case List:
-		if t.Node(value).Kind() != ast.List {
+		if valueKind != ast.List {
 			return false
 		}
 		element := a.Type(TypeID(n.data))
@@ -76,13 +86,13 @@ func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
 			element = typ.view.child
 		}
 		for _, v := range t.List(value) {
-			if !element.Valid(t, v) {
+			if !element.validAST(t, v, true) {
 				return false
 			}
 		}
 		return true
 	case Tuple:
-		if t.Node(value).Kind() != ast.List {
+		if valueKind != ast.List {
 			return false
 		}
 		want, got := a.tuple(typ.id), t.List(value)
@@ -90,36 +100,67 @@ func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
 			return false
 		}
 		for i := range got {
-			if !a.valid(want[i], t, got[i]) {
+			if !a.Type(want[i]).validAST(t, got[i], true) {
 				return false
 			}
 		}
 		return true
 	case Sum:
 		for _, member := range a.sum(typ.id) {
-			if a.valid(member, t, value) {
+			if a.Type(member).validAST(t, value, inList) {
 				return true
 			}
 		}
 		return false
 	case Object:
-		return typ.validObject(t, value)
+		return valueKind == ast.Object && typ.validObject(t, value, inList)
 	case Refined:
 		r := a.refinements[n.data]
 		base := a.Type(r.base)
 		if typ.view != nil {
 			base = typ.view.child
 		}
-		return base.Valid(t, value) && a.validConstraint(r.constraint, t, value)
+		return base.validAST(t, value, inList) && a.validConstraint(r.constraint, t, value)
 	default:
 		panic(kind)
 	}
 }
 
-func (typ Type) validObject(t *ast.Tree, value ast.NodeID) bool {
-	if t.Node(value).Kind() != ast.Object {
+func (typ Type) validAny(t *ast.Tree, value ast.NodeID, inList bool) bool {
+	switch t.Node(value).Kind() {
+	case ast.Null, ast.Bool, ast.String:
+		return true
+	case ast.Int:
+		return astInt(t, value)
+	case ast.Decimal:
+		return astReal(t, value)
+	case ast.List:
+		for _, child := range t.List(value) {
+			if !typ.validAST(t, child, true) {
+				return false
+			}
+		}
+		return true
+	case ast.Object:
+		fields := t.Object(value)
+		seen := make(map[string]struct{}, len(fields))
+		for _, field := range fields {
+			name := t.Text(field.Name)
+			if _, exists := seen[name]; exists {
+				return false
+			}
+			seen[name] = struct{}{}
+			if !typ.validAST(t, field.Value, inList) {
+				return false
+			}
+		}
+		return true
+	default:
 		return false
 	}
+}
+
+func (typ Type) validObject(t *ast.Tree, value ast.NodeID, inList bool) bool {
 	want := Fields{a: typ.a}
 	if typ.view != nil {
 		want.views = typ.view.fields
@@ -132,50 +173,38 @@ func (typ Type) validObject(t *ast.Tree, value ast.NodeID) bool {
 		return false
 	}
 
-	var small uint64
-	var large []uint64
-	if length > 64 {
-		large = make([]uint64, (length+63)/64)
-	}
-	mark := func(i int) bool {
-		if large == nil {
-			bit := uint64(1) << uint(i)
-			if small&bit != 0 {
-				return false
-			}
-			small |= bit
-			return true
-		}
-		word, bit := i/64, uint(i%64)
-		mask := uint64(1) << bit
-		if large[word]&mask != 0 {
-			return false
-		}
-		large[word] |= mask
-		return true
-	}
-	seen := func(i int) bool {
-		if large == nil {
-			return small&(uint64(1)<<uint(i)) != 0
-		}
-		return large[i/64]&(uint64(1)<<uint(i%64)) != 0
+	// NOTE(i4k): keep presence tracking on the stack for objects with up to 256 fields,
+	// otherwise use a bitset.
+	var small [4]uint64
+	seen := small[:]
+	if length > len(small)*64 {
+		seen = make([]uint64, (length+63)/64)
 	}
 
 	for _, f := range got {
 		name := t.Text(f.Name)
 		i := want.index(name)
-		if i < 0 || !mark(i) {
+		if i < 0 {
 			return false
 		}
+		word, bit := i/64, uint64(1)<<uint(i%64)
+		if seen[word]&bit != 0 {
+			return false
+		}
+		seen[word] |= bit
 		var child Type
 		if want.views != nil {
 			child = want.views[i].Type()
 		} else {
 			child = want.a.Type(want.v[i].Value)
 		}
-		if !child.Valid(t, f.Value) {
+		if !child.validAST(t, f.Value, inList) {
 			return false
 		}
+	}
+	// known, unique fields with equal counts cover every required field.
+	if len(got) == length {
+		return true
 	}
 	for i := 0; i < length; i++ {
 		var optional bool
@@ -184,7 +213,7 @@ func (typ Type) validObject(t *ast.Tree, value ast.NodeID) bool {
 		} else {
 			optional = want.v[i].Optional()
 		}
-		if !optional && !seen(i) {
+		if !optional && seen[i/64]&(uint64(1)<<uint(i%64)) == 0 {
 			return false
 		}
 	}
@@ -241,7 +270,7 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 	if d.flags&constraintEnum != 0 {
 		values := a.constraintEnums[d.enum.off : d.enum.off+d.enum.len]
 		for _, lit := range values {
-			if a.valid(lit, t, value) {
+			if a.Type(lit).validAST(t, value, false) {
 				return true
 			}
 		}
@@ -277,70 +306,17 @@ func astRealNumber(t *ast.Tree, id ast.NodeID) (decimal.Number, bool) {
 			return decimal.Number{}, false
 		}
 		text := v.String()
-		negative := len(text) > 0 && text[0] == '-'
+		negative := text[0] == '-'
 		if negative {
 			text = text[1:]
 		}
 		return decimal.Number{Neg: negative, Digits: []byte(text)}, true
 	case ast.Decimal:
 		parts, err := decimal.Parse([]byte(t.Decimal(id)), nil)
-		if err != nil {
-			return decimal.Number{}, false
-		}
-		return decimal.Number{Neg: parts.Neg, Digits: parts.Digits, Exp: parts.Exp}, true
-	case ast.Schema:
-		s := t.Schema(id)
-		lit, ok := literalValue(t, id)
-		if !ok {
-			return decimal.Number{}, false
-		}
-		lk := t.Node(lit).Kind()
-		if lk != ast.Decimal {
-			return decimal.Number{}, false
-		}
-		parts, err := decimal.Parse([]byte(t.Decimal(lit)), nil)
-		if err != nil {
-			return decimal.Number{}, false
-		}
-		dec := decimal.Number{Neg: parts.Neg, Digits: parts.Digits, Exp: parts.Exp}
-		switch t.Name(s.Type) {
-		case "float32":
-			if !decimalCanBeFloat(dec, f32Fmt) {
-				return decimal.Number{}, false
-			}
-		case "float64":
-			if !decimalCanBeFloat(dec, f64Fmt) {
-				return decimal.Number{}, false
-			}
-		}
-		return dec, true
+		return parts, err == nil
 	default:
 		return decimal.Number{}, false
 	}
-}
-
-func literalValue(t *ast.Tree, id ast.NodeID) (ast.NodeID, bool) {
-	s := t.Schema(id)
-	if len(s.Clauses) != 1 {
-		return 0, false
-	}
-	constraint := t.Constraint(s.Clauses[0])
-	node := t.Node(constraint)
-	if node.Kind() != ast.Binary {
-		return 0, false
-	}
-	b := t.Binary(constraint)
-	if b.Op != token.Eq {
-		return 0, false
-	}
-	if isX(t, b.Left) {
-		return b.Right, true
-	}
-	return b.Left, true
-}
-
-func isX(t *ast.Tree, id ast.NodeID) bool {
-	return t.Node(id).Kind() == ast.Ident && t.Ident(id) == "x"
 }
 
 func (a *Arena) checkRealNumberBounds(v decimal.Number, flags boundFlags, minID, maxID TypeID) bool {
@@ -368,14 +344,10 @@ func (a *Arena) checkRealNumberBounds(v decimal.Number, flags boundFlags, minID,
 }
 
 func astInt64(t *ast.Tree, id ast.NodeID) (int64, bool) {
-	var raw string
-	switch t.Node(id).Kind() {
-	case ast.Int:
-		raw = t.Int(id)
-	default:
+	if t.Node(id).Kind() != ast.Int {
 		return 0, false
 	}
-	v, err := strconv.ParseInt(raw, 10, 64)
+	v, err := strconv.ParseInt(t.Int(id), 10, 64)
 	return v, err == nil
 }
 

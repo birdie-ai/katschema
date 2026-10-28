@@ -725,6 +725,12 @@ func TestValidation(t *testing.T) {
 			if got := a.Valid(typ, tree, val); got != tc.want {
 				t.Fatalf("Valid = %v, want %v", got, tc.want)
 			}
+			for _, values := range []*Arena{a, NewArena()} {
+				value := values.Type(compile(t, values, tc.value))
+				if got := a.Type(typ).ValidType(value); got != tc.want {
+					t.Fatalf("ValidType = %v, want %v", got, tc.want)
+				}
+			}
 		})
 	}
 }
