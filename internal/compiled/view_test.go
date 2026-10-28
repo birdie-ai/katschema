@@ -2,15 +2,12 @@ package compiled
 
 import (
 	"testing"
-
-	"github.com/birdie-ai/katschema/ks"
 )
 
 func TestEmptyTypeViewsRetainArena(t *testing.T) {
 	t.Parallel()
 	a := NewArena()
 	scalar := a.Type(a.Int())
-	tuple := a.Type(compile(t, a, ks.List(ks.LitInt(1), ks.LitInt(2))))
 	for _, tc := range []struct {
 		name string
 		typ  Type
@@ -22,18 +19,6 @@ func TestEmptyTypeViewsRetainArena(t *testing.T) {
 		{
 			name: "non-refined base",
 			typ:  scalar.Base(),
-		},
-		{
-			name: "non-tuple item",
-			typ:  scalar.At(0),
-		},
-		{
-			name: "negative tuple index",
-			typ:  tuple.At(-1),
-		},
-		{
-			name: "out-of-range tuple index",
-			typ:  tuple.At(tuple.Len()),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

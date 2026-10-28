@@ -71,11 +71,11 @@ func (t Type) Len() int {
 
 func (t Type) At(i int) Type {
 	if t.Kind() != Tuple {
-		return t.a.Type(0)
+		panic("katschema: At called on a non-tuple type")
 	}
 	v := t.a.tuple(t.id)
 	if i < 0 || i >= len(v) {
-		return t.a.Type(0)
+		panic("katschema: At called with index out of tuple range")
 	}
 	return t.a.Type(v[i])
 }

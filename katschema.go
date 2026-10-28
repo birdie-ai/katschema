@@ -148,6 +148,16 @@ func (t Type) Element() (Type, bool) {
 	return Type{ref: element}, element.Kind() != Invalid
 }
 
+// Len returns the number of tuple elements or object fields, or zero for other types.
+func (t Type) Len() int { return t.ref.Len() }
+
+// At returns the tuple element at index i, in source order.
+// It panics for non-tuples and when index is outside [0, Len()).
+func (t Type) At(i int) Type {
+	element := t.ref.At(i)
+	return Type{ref: element}
+}
+
 // Fields returns the fields of an object in canonical order.
 func (t Type) Fields() []Field {
 	fields := t.ref.Fields()
