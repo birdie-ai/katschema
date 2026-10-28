@@ -279,13 +279,20 @@ func OverlayAt(bottom Type, path Path, top Type) (Type, error) {
 	return Type{ref: ref}, nil
 }
 
-// Validate reports whether value is accepted by the compiled type.
+// Validate compiles value and checks it against t using ValidateType.
 func (t Type) Validate(value ks.Value) error {
-	tree, root, err := ks.Build(value)
+	compiledValue, err := Compile(context.Background(), value)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrValidation, err)
 	}
-	if !t.ref.Valid(tree, root) {
+	return t.ValidateType(compiledValue)
+}
+
+// ValidateType checks a compiled literal value against t.
+// Non-literal types are rejected. Neither type is modified, and they may belong
+// to different compilers.
+func (t Type) ValidateType(value Type) error {
+	if !t.ref.ValidType(value.ref) {
 		return fmt.Errorf("%w: value does not conform to %s", ErrValidation, t.Kind())
 	}
 	return nil
