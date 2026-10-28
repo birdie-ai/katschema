@@ -7,6 +7,7 @@ import (
 
 	"github.com/birdie-ai/katschema/internal/compiled"
 	"github.com/birdie-ai/katschema/ks"
+	"github.com/birdie-ai/katschema/parser/ast"
 )
 
 type (
@@ -36,7 +37,7 @@ type (
 
 	// Compiler owns the canonical type arena used by a group of related
 	// compilations.
-	// NOTE(i4k): Compiler is not safe for concurrent Compile calls.
+	// NOTE(i4k): Compiler is not safe for concurrent Compile or CompileAST calls.
 	// Synchronize reuse or give each concurrent request its own compiler.
 	Compiler struct {
 		arena    *compiled.Arena
@@ -107,6 +108,12 @@ func Compile(ctx context.Context, value ks.Value) (Type, error) {
 	return NewCompiler().Compile(ctx, value)
 }
 
+// CompileAST compiles an existing AST subtree into an immutable semantic type.
+// Use Compiler.CompileAST to share an arena across a batch of compilations.
+func CompileAST(ctx context.Context, tree *ast.Tree, root ast.NodeID) (Type, error) {
+	return NewCompiler().CompileAST(ctx, tree, root)
+}
+
 func CompileWithResolver(ctx context.Context, value ks.Value, resolver TypeResolver) (Type, error) {
 	return NewCompilerWithResolver(resolver).Compile(ctx, value)
 }
@@ -116,7 +123,14 @@ func (c *Compiler) Compile(ctx context.Context, value ks.Value) (Type, error) {
 	if err != nil {
 		return Type{}, err
 	}
+	return c.CompileAST(ctx, tree, root)
+}
 
+// CompileAST compiles an existing AST subtree using this compiler's arena and
+// resolver. The caller must provide a non-nil tree.
+// It does not modify or retain the tree; the caller may reuse or reset
+// the tree after this call. The compiled type remains owned by the compiler's arena.
+func (c *Compiler) CompileAST(ctx context.Context, tree *ast.Tree, root ast.NodeID) (Type, error) {
 	resolve := compiled.TypeResolver(nil)
 	if c.resolver != nil {
 		resolve = func(name string) (compiled.ResolvedType, error) {
@@ -279,13 +293,25 @@ func OverlayAt(bottom Type, path Path, top Type) (Type, error) {
 	return Type{ref: ref}, nil
 }
 
-// Validate compiles value and checks it against t using ValidateType.
+// Validate builds value's AST and checks it against t using ValidateAST.
 func (t Type) Validate(value ks.Value) error {
-	compiledValue, err := Compile(context.Background(), value)
+	tree, root, err := ks.Build(value)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrValidation, err)
 	}
-	return t.ValidateType(compiledValue)
+	return t.ValidateAST(tree, root)
+}
+
+// ValidateAST checks an existing AST subtree against t without modifying either.
+// The caller must provide a non-nil tree.
+// Literal values are validated directly. Schema expressions and sums are
+// compiled as needed, and must describe concrete values as in ValidateType.
+// Failures wrap ErrValidation; use CompileAST for compilation diagnostics.
+func (t Type) ValidateAST(tree *ast.Tree, root ast.NodeID) error {
+	if !t.ref.Valid(tree, root) {
+		return fmt.Errorf("%w: value does not conform to %s", ErrValidation, t.Kind())
+	}
+	return nil
 }
 
 // ValidateType checks a compiled literal value against t.
