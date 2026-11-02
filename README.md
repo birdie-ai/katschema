@@ -187,6 +187,18 @@ Example:
 }
 ```
 
+Sum alternatives can share metadata or carry their own:
+
+```katschema
+{
+  "id": (string | int, pk),
+  "value": (string, title="Text") | (int, title="Number")
+}
+```
+
+In the first field, `pk` belongs to the whole sum. In the second, each label
+belongs to its alternative. Constraints must be applied to individual alternatives;
+
 ## Type ordering
 
 A useful way to think about Katschema is that every value or schema describes a set of valid values.

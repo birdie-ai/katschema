@@ -61,6 +61,71 @@ test("one complete value", async (t) => {
   }
 });
 
+test("schema sums and metadata scope", async (t) => {
+  const testcases = [
+    { name: "inner sum", src: "(string | int)", valid: true },
+    { name: "many inner alternatives", src: "(string | int | bool)", valid: true },
+    { name: "whole sum metadata", src: '(string | int, optional, label="Value")', valid: true },
+    { name: "outer sum", src: "(string) | (int)", valid: true },
+    { name: "many outer alternatives", src: "(string) | (int) | (bool)", valid: true },
+    { name: "branch metadata", src: '(string, label="Text") | (int, label="Number")', valid: true },
+    { name: "wrapped sum metadata", src: '((string, label="Text") | (int, label="Number"), optional)', valid: true },
+    { name: "nested inner sum", src: "((string | int) | bool)", valid: true },
+    { name: "nested outer sums", src: "(string | int) | (bool | real)", valid: true },
+    { name: "structural alternatives", src: '({"name":(string)} | [(int)])', valid: true },
+    { name: "references", src: "(pkg.Type | .types.other)", valid: true },
+    { name: "sum in list", src: "[(string) | (int)]", valid: true },
+    { name: "sum in object", src: '{"value":(string | int, optional)}', valid: true },
+    { name: "comments", src: "(string /* left */ | // separator\n int, /* flag */ optional)", valid: true },
+    { name: "whole sum constraint syntax", src: "(string | int, x > 0)", valid: true },
+    { name: "branch constraint syntax", src: "(string, len(x) > 0) | (int, x > 0)", valid: true },
+    { name: "bare types", src: "string | int", valid: false },
+    { name: "literal alternatives", src: "1 | 2", valid: false },
+    { name: "bare null alternative", src: "(string) | null", valid: false },
+    { name: "inner null alternative", src: "(string | null)", valid: false },
+    { name: "null type", src: "(null)", valid: false },
+    { name: "literal type", src: "(10)", valid: false },
+    { name: "literal inner alternative", src: '(string | "text")', valid: false },
+    { name: "missing first alternative", src: "(| int)", valid: false },
+    { name: "missing inner alternative", src: "(string |)", valid: false },
+    { name: "missing outer alternative", src: "(string) |", valid: false },
+    { name: "bare outer alternative", src: "(string) | int", valid: false },
+    { name: "logical inner separator", src: "(string || int)", valid: false },
+    { name: "logical outer separator", src: "(string) || (int)", valid: false },
+    { name: "repeated separator", src: "(string | | int)", valid: false },
+    { name: "alternative after metadata", src: "(string, optional | int)", valid: false },
+    { name: "nested single schema", src: "((int))", valid: false },
+    { name: "nested single sum schema", src: "((string | int), optional)", valid: false },
+  ];
+  for (const tc of testcases) {
+    await t.test(tc.name, () => {
+      const result = grammar.match(tc.src);
+      assert.equal(result.succeeded(), tc.valid, result.message || tc.src);
+    });
+  }
+});
+
+test("schema clause separators", async (t) => {
+  const testcases = [
+    { name: "type trailing comma", src: "(int,)", valid: true },
+    { name: "flag trailing comma", src: "(int, pk,)", valid: true },
+    { name: "assignment trailing comma", src: '(string, label="Name",)', valid: true },
+    { name: "sum trailing comma", src: "(string | int, optional,)", valid: true },
+    { name: "trailing comment", src: "(string | int, optional, /* end */)", valid: true },
+    { name: "empty schema", src: "(,)", valid: false },
+    { name: "empty first clause", src: "(int,,pk)", valid: false },
+    { name: "empty final clause", src: "(int,pk,,)", valid: false },
+    { name: "missing assigned value", src: "(int,label=)", valid: false },
+    { name: "missing alternative before clause", src: "(int |, optional)", valid: false },
+  ];
+  for (const tc of testcases) {
+    await t.test(tc.name, () => {
+      const result = grammar.match(tc.src);
+      assert.equal(result.succeeded(), tc.valid, result.message || tc.src);
+    });
+  }
+});
+
 test("katschema examples", async (t) => {
   const dir = path.join(__dirname, "examples");
   const files = fs.readdirSync(dir).filter((name) => name.endsWith(".ks")).sort();

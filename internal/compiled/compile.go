@@ -96,7 +96,7 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 		t, err := c.object(id)
 		return t, false, err
 	case ast.Sum:
-		t, err := c.sum(id)
+		t, err := c.sum(id, false)
 		return t, false, err
 	case ast.Schema:
 		return c.schema(id, field)
@@ -202,7 +202,7 @@ func (c *compiler) list(id ast.NodeID) (TypeID, error) {
 
 func (c *compiler) hasSchemaSyntax(id ast.NodeID) bool {
 	switch c.t.Node(id).Kind() {
-	case ast.Schema:
+	case ast.Schema, ast.Sum:
 		return true
 	case ast.List:
 		for _, x := range c.t.List(id) {
@@ -248,27 +248,42 @@ func (c *compiler) object(id ast.NodeID) (TypeID, error) {
 	return c.a.internObject(fields), nil
 }
 
-func (c *compiler) sum(id ast.NodeID) (TypeID, error) {
+func (c *compiler) sum(id ast.NodeID, typePosition bool) (TypeID, error) {
 	s := c.t.Sum(id)
 
 	var members [2]TypeID
-	left, optional, err := c.value(s.Left, false)
+	left, err := c.sumMember(s.Left, typePosition)
 	if err != nil {
 		return 0, err
-	}
-	if optional {
-		return 0, c.error(s.Left, ErrOptionalUnexpected)
 	}
 	members[0] = left
-	right, optional, err := c.value(s.Right, false)
+	right, err := c.sumMember(s.Right, typePosition)
 	if err != nil {
 		return 0, err
-	}
-	if optional {
-		return 0, c.error(s.Left, ErrOptionalUnexpected)
 	}
 	members[1] = right
 	return c.a.internSum(members), nil
+}
+
+func (c *compiler) sumMember(id ast.NodeID, typePosition bool) (TypeID, error) {
+	switch c.t.Node(id).Kind() {
+	case ast.Sum:
+		return c.sum(id, typePosition)
+	case ast.Name, ast.Path:
+		return c.typeRef(id)
+	case ast.List, ast.Object:
+		if typePosition {
+			return c.typeRef(id)
+		}
+	}
+	typ, optional, err := c.value(id, false)
+	if err != nil {
+		return 0, err
+	}
+	if optional {
+		return 0, c.error(id, ErrOptionalUnexpected)
+	}
+	return typ, nil
 }
 
 func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
@@ -304,6 +319,14 @@ func (c *compiler) schema(id ast.NodeID, field bool) (TypeID, bool, error) {
 				base = r.base
 			} else if hasConstraintClause(c.t, s.Clauses) {
 				return 0, false, c.errorf(id, "cannot refine %s with additional constraints", c.a.Node(r.base).kind)
+			}
+		}
+	}
+
+	if c.t.Node(s.Type).Kind() == ast.Sum || c.a.Node(base).kind == Sum {
+		for _, clause := range s.Clauses {
+			if c.t.Node(clause).Kind() == ast.Constraint {
+				return 0, false, c.errorf(clause, "constraints must be applied to individual sum alternatives")
 			}
 		}
 	}
@@ -484,7 +507,7 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 	case ast.Object:
 		return c.object(id)
 	case ast.Sum:
-		return c.sum(id)
+		return c.sum(id, true)
 	case ast.Path:
 		return 0, c.errorf(id, "type paths require a resolver")
 	default:

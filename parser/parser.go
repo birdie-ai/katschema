@@ -91,7 +91,7 @@ func (p *parser) enter() error {
 
 func (p *parser) value() (ast.NodeID, error) {
 	if p.tok.kind == token.LParen {
-		return p.schema()
+		return p.schemaSum()
 	}
 	return p.jsonValue()
 }
@@ -234,6 +234,25 @@ func (p *parser) list() (ast.NodeID, error) {
 	return p.tree.AddList(elems, token.Span{Start: open.span.Start, End: close.span.End}), nil
 }
 
+func (p *parser) schemaSum() (ast.NodeID, error) {
+	left, err := p.schema()
+	if err != nil {
+		return 0, err
+	}
+	for p.tok.kind == token.Pipe {
+		if err := p.next(); err != nil {
+			return 0, err
+		}
+		right, err := p.schema()
+		if err != nil {
+			return 0, err
+		}
+		span := token.Span{Start: p.tree.Node(left).Span().Start, End: p.tree.Node(right).Span().End}
+		left = p.tree.AddSum(left, right, span)
+	}
+	return left, nil
+}
+
 func (p *parser) schema() (ast.NodeID, error) {
 	if err := p.enter(); err != nil {
 		return 0, err
@@ -243,7 +262,7 @@ func (p *parser) schema() (ast.NodeID, error) {
 	if err != nil {
 		return 0, err
 	}
-	typ, err := p.typeAtom()
+	typ, err := p.typeSum()
 	if err != nil {
 		return 0, err
 	}
@@ -269,6 +288,28 @@ func (p *parser) schema() (ast.NodeID, error) {
 	return p.tree.AddSchema(typ, clauses, token.Span{Start: open.span.Start, End: close.span.End}), nil
 }
 
+func (p *parser) typeSum() (ast.NodeID, error) {
+	left, err := p.typeAtom()
+	if err != nil {
+		return 0, err
+	}
+	if p.tree.Node(left).Kind() == ast.Schema && p.tok.kind != token.Pipe {
+		return 0, p.expected("|")
+	}
+	for p.tok.kind == token.Pipe {
+		if err := p.next(); err != nil {
+			return 0, err
+		}
+		right, err := p.typeAtom()
+		if err != nil {
+			return 0, err
+		}
+		span := token.Span{Start: p.tree.Node(left).Span().Start, End: p.tree.Node(right).Span().End}
+		left = p.tree.AddSum(left, right, span)
+	}
+	return left, nil
+}
+
 func (p *parser) typeAtom() (ast.NodeID, error) {
 	switch p.tok.kind {
 	case token.Ident, token.Dot:
@@ -277,6 +318,8 @@ func (p *parser) typeAtom() (ast.NodeID, error) {
 		return p.object()
 	case token.LBrack:
 		return p.list()
+	case token.LParen:
+		return p.schema()
 	default:
 		return 0, p.expected("type reference")
 	}
