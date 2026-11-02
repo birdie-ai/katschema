@@ -41,91 +41,77 @@ Katschema {
     | SchemaAtom
     
   Clause =
-    LogicalExpr
-    | Keyvalue
+    Keyvalue
     | Tag
-    
+    | Expr
+
   Tag =
-  	Ident
-    
+    Ident &("," | ")")
+
   Keyvalue =
-  	Ident Assign JSON
-    
+    Ident Assign JSON
+
   Assign =
-  	"="
-    
-  LogicalExpr =
-  	(ChainedRangeExpr | BinExpr | UnaryExpr | Funcall) (LogicalOP LogicalExpr)*
-    
-  XRef = "x"
-  
-  ValueExpr =
-  	SingleValueExpr
-    | WrappedValueExpr
-    
-  BinExpr = 
-  	ValueExpr BinaryPredicate ValueExpr
-    
+    assign
+
+  assign = "=" ~"="
+
+  Expr =
+    OrExpr
+
+  OrExpr =
+    AndExpr ("||" AndExpr)*
+
+  AndExpr =
+    EqualExpr ("&&" EqualExpr)*
+
+  EqualExpr =
+    OrderExpr (EqualOp OrderExpr)?
+
+  EqualOp =
+    "==" | "!=" | "~" | inOp
+
+  inOp = "in" ~identPart
+
+  OrderExpr =
+    AddExpr (OrderOp AddExpr)*
+
+  OrderOp =
+    "<=" | ">=" | "<" | ">"
+
+  AddExpr =
+    MulExpr (AddOp MulExpr)*
+
+  AddOp =
+    "+" | "-"
+
+  MulExpr =
+    UnaryExpr (MulOp UnaryExpr)*
+
+  MulOp =
+    "*" | "/" | "%"
+
   UnaryExpr =
-  	UnaryPredicate (ValueExpr | LogicalExpr)
-    
-  ChainedRangeExpr =
-  	Primitive Range SingleValueExpr Range Primitive
-    
-  SingleValueExpr =
-  	ArithExpr
-  	| Funcall
-    | XRef
+    UnaryOp UnaryExpr -- prefix
+    | Primary -- primary
+
+  UnaryOp =
+    "!" | "+" | "-"
+
+  Primary =
+    Funcall
+    | Ref
     | JSON
-    | WrappedValueExpr
-    
-  WrappedValueExpr =
-  	"(" ValueExpr ")"
-    
-  ArithExpr =
-  	ValueExpr ArithOP ValueExpr
-    
+    | Group
+
+  Group =
+    "(" Expr ")"
+
   Funcall =
-  	Ref "(" Args ")"
-    
+    Ref "(" Args? ")"
+
   Args =
-  	ValueExpr ("," Args)*
-    
-  LogicalOP = 
-  	"&&"
-   	| "||"
-    
-  ArithOP =
-  	"+"
-    | "-"
-	| "*"
-	| "/"
-    | "%"
-  
-  UnaryPredicate  =
-  	"!"
-    
-  BinaryPredicate = 
-  	Eq
-    | Ineq
-    | Range
-    | Match
-    | "in"
-    
-  Eq =
-  	"=="
-  
-  Ineq = 
-  	"!="
-    
-  Match = 
-  	"~"
-    
-  Range = 
-  	"<="
-    | ">="
-    | "<"
-    | ">"
+    Expr ("," Expr)* ","?
   
   Ident = 
   	ident
@@ -216,9 +202,13 @@ Katschema {
 
   exponentMark = "e" | "E"
 
-  True = "true"
-  False = "false"
-  Null = "null"
+  True = trueLiteral
+  False = falseLiteral
+  Null = nullLiteral
+
+  trueLiteral = "true" ~identPart
+  falseLiteral = "false" ~identPart
+  nullLiteral = "null" ~identPart
   
   space += comment
 

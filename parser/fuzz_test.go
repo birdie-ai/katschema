@@ -82,6 +82,11 @@ func FuzzParse(f *testing.F) {
 		`{"value":(string | int, optional)}`, `(string,label="Text")|(int,label="Number")`,
 		`((string)|(int),label="Value")`, `([(int)|(string)]|{"name":(string)})`,
 		`(int|/* alternative */string)`, `(int||string)`, `(int|null)`,
+		`(int, 0 <= x <= 100)`, `(string, x in ["a","b"] || x == "c")`,
+		`(int, label="Age", x > - /* bound */ 1, optional)`,
+		`(int, (x > 0 && x < 10) || x == -1)`, `(int, fn(), pkg.fn(x,))`,
+		`(int, +x * -x / 2 % 3 != 0)`, `(int, .fn(.value, pkg.true))`,
+		`(int, x == y == z)`, `(int, x intrue)`, `(int, x /* lookahead */ @)`,
 	} {
 		f.Add(src)
 	}

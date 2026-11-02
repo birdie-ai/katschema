@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/birdie-ai/katschema/parser/token"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestPrint(t *testing.T) {
@@ -168,6 +169,22 @@ func TestPrint(t *testing.T) {
 				return a.AddSchema(a.AddObject([]Field{}, z), nil, z)
 			},
 			want: `({})`,
+		},
+		{
+			name: "bare identifier constraint",
+			root: func(a *Tree) NodeID {
+				return a.AddSchema(a.AddName("int", z),
+					[]NodeID{a.AddConstraint(a.AddIdent("x", z), z)}, z)
+			},
+			want: `(int,(x))`,
+		},
+		{
+			name: "qualified identifier constraint",
+			root: func(a *Tree) NodeID {
+				return a.AddSchema(a.AddName("int", z),
+					[]NodeID{a.AddConstraint(a.AddIdent("x.field", z), z)}, z)
+			},
+			want: `(int,(x.field))`,
 		},
 		{
 			name: "schema int binary constraint (x == 67)",
@@ -337,6 +354,194 @@ func TestPrint(t *testing.T) {
 			}
 			if got := b.String(); got != tc.want {
 				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPrintExpressionPrecedence(t *testing.T) {
+	t.Parallel()
+
+	type testcase struct {
+		name string
+		root func(*Tree) NodeID
+		want string
+	}
+
+	z := token.UnknownSpan()
+	for _, tc := range []testcase{
+		{
+			name: "higher precedence on right",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(a.AddIdent("a", z), token.Add,
+					a.AddBinary(a.AddIdent("b", z), token.Mul, a.AddIdent("c", z), z), z)
+			},
+			want: "a+b*c",
+		},
+		{
+			name: "lower precedence on left",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(
+					a.AddBinary(a.AddIdent("a", z), token.Add, a.AddIdent("b", z), z),
+					token.Mul, a.AddIdent("c", z), z)
+			},
+			want: "(a+b)*c",
+		},
+		{
+			name: "lower precedence on right",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(a.AddIdent("a", z), token.And,
+					a.AddBinary(a.AddIdent("b", z), token.Or, a.AddIdent("c", z), z), z)
+			},
+			want: "a&&(b||c)",
+		},
+		{
+			name: "right nested subtraction",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(a.AddIdent("a", z), token.Sub,
+					a.AddBinary(a.AddIdent("b", z), token.Sub, a.AddIdent("c", z), z), z)
+			},
+			want: "a-(b-c)",
+		},
+		{
+			name: "right nested addition",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(a.AddIdent("a", z), token.Add,
+					a.AddBinary(a.AddIdent("b", z), token.Add, a.AddIdent("c", z), z), z)
+			},
+			want: "a+(b+c)",
+		},
+		{
+			name: "right nested product",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(a.AddIdent("a", z), token.Div,
+					a.AddBinary(a.AddIdent("b", z), token.Mul, a.AddIdent("c", z), z), z)
+			},
+			want: "a/(b*c)",
+		},
+		{
+			name: "left nested equality",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(
+					a.AddBinary(a.AddIdent("a", z), token.Eq, a.AddIdent("b", z), z),
+					token.Ne, a.AddIdent("c", z), z)
+			},
+			want: "(a==b)!=c",
+		},
+		{
+			name: "right nested equality",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(a.AddIdent("a", z), token.Eq,
+					a.AddBinary(a.AddIdent("b", z), token.Ne, a.AddIdent("c", z), z), z)
+			},
+			want: "a==(b!=c)",
+		},
+		{
+			name: "left nested membership",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(
+					a.AddBinary(a.AddIdent("a", z), token.In, a.AddIdent("b", z), z),
+					token.Match, a.AddIdent("c", z), z)
+			},
+			want: "(a in b)~c",
+		},
+		{
+			name: "right nested match",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(a.AddIdent("a", z), token.In,
+					a.AddBinary(a.AddIdent("b", z), token.Match, a.AddIdent("c", z), z), z)
+			},
+			want: "a in (b~c)",
+		},
+		{
+			name: "left nested range",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(
+					a.AddBinary(a.AddInt("0", z), token.Le, a.AddIdent("x", z), z),
+					token.Lt, a.AddInt("100", z), z)
+			},
+			want: "0<=x<100",
+		},
+		{
+			name: "right nested range",
+			root: func(a *Tree) NodeID {
+				return a.AddBinary(a.AddIdent("a", z), token.Lt,
+					a.AddBinary(a.AddIdent("b", z), token.Lt, a.AddIdent("c", z), z), z)
+			},
+			want: "a<(b<c)",
+		},
+		{
+			name: "negated addition",
+			root: func(a *Tree) NodeID {
+				return a.AddUnary(token.Sub,
+					a.AddBinary(a.AddIdent("a", z), token.Add, a.AddIdent("b", z), z), z)
+			},
+			want: "-(a+b)",
+		},
+		{
+			name: "negated equality",
+			root: func(a *Tree) NodeID {
+				return a.AddUnary(token.Not,
+					a.AddBinary(a.AddIdent("a", z), token.Eq, a.AddIdent("b", z), z), z)
+			},
+			want: "!(a==b)",
+		},
+		{
+			name: "negated integer stays unary",
+			root: func(a *Tree) NodeID {
+				return a.AddUnary(token.Sub, a.AddInt("1", z), z)
+			},
+			want: "-(1)",
+		},
+		{
+			name: "negated negative decimal stays unary",
+			root: func(a *Tree) NodeID {
+				return a.AddUnary(token.Sub, a.AddDecimal("-1.5", z), z)
+			},
+			want: "-(-1.5)",
+		},
+		{
+			name: "positive integer stays unary",
+			root: func(a *Tree) NodeID {
+				return a.AddUnary(token.Add, a.AddInt("1", z), z)
+			},
+			want: "+1",
+		},
+		{
+			name: "nested unary",
+			root: func(a *Tree) NodeID {
+				return a.AddUnary(token.Sub, a.AddUnary(token.Sub, a.AddIdent("x", z), z), z)
+			},
+			want: "--x",
+		},
+		{
+			name: "explicit groups preserved",
+			root: func(a *Tree) NodeID {
+				return a.AddGroup(z, a.AddGroup(z, a.AddIdent("x", z)))
+			},
+			want: "((x))",
+		},
+		{
+			name: "call arguments",
+			root: func(a *Tree) NodeID {
+				return a.AddCall("f", []NodeID{
+					a.AddBinary(a.AddIdent("a", z), token.Add, a.AddIdent("b", z), z),
+					a.AddBinary(a.AddBinary(a.AddIdent("c", z), token.Add, a.AddIdent("d", z), z),
+						token.Mul, a.AddIdent("e", z), z),
+				}, z, z)
+			},
+			want: "f(a+b,(c+d)*e)",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tree := New()
+			root := tc.root(tree)
+			var b bytes.Buffer
+			if err := Print(&b, tree, root); err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, b.String()); diff != "" {
+				t.Fatalf("printed expression (-want +got):\n%s", diff)
 			}
 		})
 	}

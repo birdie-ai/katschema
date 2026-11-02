@@ -62,8 +62,6 @@ func TestParseSumErrors(t *testing.T) {
 		{src: "(int | string, label=)"},
 		{src: "((int))"},
 		{src: "((int) |)"},
-		{src: "(int | string, x > 0)"},
-		{src: "(string, len(x) > 0) | (int, x > 0)"},
 		{src: "(int | #{1})"},
 	} {
 		t.Run(tc.src, func(t *testing.T) {

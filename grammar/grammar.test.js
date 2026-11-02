@@ -126,6 +126,64 @@ test("schema clause separators", async (t) => {
   }
 });
 
+test("constraint expressions", async (t) => {
+  const testcases = [
+    { name: "arithmetic", src: "(int, x + 2 * 3 - 4 / 2 % 2 > 0)", valid: true },
+    { name: "range chain", src: "(int, 0 <= x < 100)", valid: true },
+    { name: "grouped logical expression", src: "(int, (x > 0 && x != 10) || x == -1)", valid: true },
+    { name: "unary expressions", src: "(int, !false && -x < +10)", valid: true },
+    { name: "repeated unary", src: "(int, !!true && --x >= 0)", valid: true },
+    { name: "separated negative bound", src: "(int, x >= - /* sign */ 10)", valid: true },
+    { name: "membership", src: "(int, x in /* values */ [1,2,3])", valid: true },
+    { name: "string match", src: '(string, x ~ "^[a-z]+$")', valid: true },
+    { name: "zero arguments", src: "(int, ready())", valid: true },
+    { name: "trailing argument comma", src: "(int, check(x, 1,))", valid: true },
+    { name: "nested calls", src: "(int, check(x + 1, pkg.limit(),))", valid: true },
+    { name: "qualified call", src: "(string, pkg.check(x))", valid: true },
+    { name: "path call", src: "(string, .types.check(x))", valid: true },
+    { name: "keyword reference component", src: "(int, pkg.true(x) && .null == null)", valid: true },
+    { name: "path comparison", src: "(int, .limits.minimum <= x)", valid: true },
+    { name: "object field constraints", src: '(myObjType, len(x.tags) > 0, x.name != "")', valid: true },
+    { name: "grouped comparisons", src: "(int, (x == 1) == true)", valid: true },
+    { name: "mixed clauses", src: '(int, label="Age", x > 0, optional)', valid: true },
+    { name: "expression name prefix", src: "(int, intrue(x))", valid: true },
+    { name: "metadata collection", src: "(int, choices=[(string | int)])", valid: true },
+    { name: "whole sum constraint syntax", src: "(string | int, x > 0)", valid: true },
+    { name: "repeated equality", src: "(int, x == 1 == 2)", valid: false },
+    { name: "mixed equality operators", src: "(int, x == 1 != 2)", valid: false },
+    { name: "repeated membership", src: "(int, x in [1] in [2])", valid: false },
+    { name: "mixed membership and equality", src: "(int, x in [1] == true)", valid: false },
+    { name: "repeated match", src: '(string, x ~ "a" ~ "b")', valid: false },
+    { name: "missing binary operand", src: "(int, x >)", valid: false },
+    { name: "missing unary operand", src: "(int, !)", valid: false },
+    { name: "missing expression separator", src: "(int, x > 0 optional)", valid: false },
+    { name: "empty group", src: "(int, ())", valid: false },
+    { name: "group comma", src: "(int, (x,))", valid: false },
+    { name: "missing closing group", src: "(int, (x > 0)", valid: false },
+    { name: "call comma without arguments", src: "(int, check(,))", valid: false },
+    { name: "missing argument", src: "(int, check(x,,1))", valid: false },
+    { name: "missing argument comma", src: "(int, check(x 1))", valid: false },
+    { name: "multiple trailing argument commas", src: "(int, check(x,,))", valid: false },
+    { name: "calling a group", src: "(int, (check)(x))", valid: false },
+    { name: "calling null", src: "(int, null())", valid: false },
+    { name: "reserved reference start", src: "(int, true.field == 1)", valid: false },
+    { name: "reserved metadata name", src: "(int, true=1)", valid: false },
+    { name: "assigned expression", src: "(int, offset=1+2)", valid: false },
+    { name: "assigned schema", src: "(int, value=(string))", valid: false },
+    { name: "membership keyword boundary", src: "(int, x intrue)", valid: false },
+    { name: "membership underscore boundary", src: "(int, x in_values)", valid: false },
+    { name: "literal keyword boundary", src: "(int, truein [true])", valid: false },
+    { name: "type pipe in expression", src: "(int, x > 0 | x < 10)", valid: false },
+    { name: "malformed equality", src: "(int, x === 1)", valid: false },
+  ];
+  for (const tc of testcases) {
+    await t.test(tc.name, () => {
+      const result = grammar.match(tc.src);
+      assert.equal(result.succeeded(), tc.valid, result.message || tc.src);
+    });
+  }
+});
+
 test("katschema examples", async (t) => {
   const dir = path.join(__dirname, "examples");
   const files = fs.readdirSync(dir).filter((name) => name.endsWith(".ks")).sort();

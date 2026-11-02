@@ -14,10 +14,12 @@ import (
 const maxDepth = 10000
 
 type parser struct {
-	lex   lexer
-	tok   lexeme
-	tree  *ast.Tree
-	depth int
+	lex      lexer
+	tok      lexeme
+	look     lexeme
+	haveLook bool
+	tree     *ast.Tree
+	depth    int
 }
 
 // Parse one root value from src.
@@ -50,12 +52,29 @@ func (p *parser) read() (lexeme, error) {
 }
 
 func (p *parser) next() error {
+	if p.haveLook {
+		p.tok = p.look
+		p.haveLook = false
+		return nil
+	}
 	x, err := p.read()
 	if err != nil {
 		return err
 	}
 	p.tok = x
 	return nil
+}
+
+func (p *parser) peek() (lexeme, error) {
+	if !p.haveLook {
+		x, err := p.read()
+		if err != nil {
+			return lexeme{}, err
+		}
+		p.look = x
+		p.haveLook = true
+	}
+	return p.look, nil
 }
 
 func (p *parser) accept(kind token.Kind) (bool, error) {
@@ -313,7 +332,7 @@ func (p *parser) typeSum() (ast.NodeID, error) {
 func (p *parser) typeAtom() (ast.NodeID, error) {
 	switch p.tok.kind {
 	case token.Ident, token.Dot:
-		return p.ref()
+		return p.ref(ast.Name)
 	case token.LBrace:
 		return p.object()
 	case token.LBrack:
@@ -325,7 +344,7 @@ func (p *parser) typeAtom() (ast.NodeID, error) {
 	}
 }
 
-func (p *parser) ref() (ast.NodeID, error) {
+func (p *parser) ref(kind ast.Kind) (ast.NodeID, error) {
 	start := p.tok.span.Start
 	path, err := p.accept(token.Dot)
 	if err != nil {
@@ -359,13 +378,49 @@ func (p *parser) ref() (ast.NodeID, error) {
 		}
 	}
 	span := token.Span{Start: start, End: end}
-	if path {
+	if path && (kind == ast.Name || p.tok.kind != token.LParen) {
 		return p.tree.AddPath(parts, span), nil
 	}
-	return p.tree.AddName(strings.Join(names, "."), span), nil
+	name := strings.Join(names, ".")
+	if path {
+		var b strings.Builder
+		for _, part := range parts {
+			b.WriteByte('.')
+			b.WriteString(p.tree.Text(part.Name))
+		}
+		name = b.String()
+	}
+	if kind == ast.Name {
+		return p.tree.AddName(name, span), nil
+	}
+	if p.tok.kind == token.LParen {
+		return p.call(name, span)
+	}
+	return p.tree.AddIdent(name, span), nil
 }
 
 func (p *parser) clause() (ast.NodeID, error) {
+	if p.tok.kind == token.Ident {
+		next, err := p.peek()
+		if err != nil {
+			return 0, err
+		}
+		switch next.kind {
+		case token.Assign, token.Comma, token.RParen:
+			return p.metadata()
+		}
+	}
+	expr, err := p.expr(1)
+	if err != nil {
+		return 0, err
+	}
+	if p.tok.kind != token.Comma && p.tok.kind != token.RParen {
+		return 0, p.expected(", or )")
+	}
+	return p.tree.AddConstraint(expr, p.tree.Node(expr).Span()), nil
+}
+
+func (p *parser) metadata() (ast.NodeID, error) {
 	name, err := p.expect(token.Ident)
 	if err != nil {
 		return 0, err

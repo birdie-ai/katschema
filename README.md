@@ -196,8 +196,11 @@ Sum alternatives can share metadata or carry their own:
 }
 ```
 
-In the first field, `pk` belongs to the whole sum. In the second, each label
+In the first field, `pk` belongs to the whole sum. In the second, each title
 belongs to its alternative. Constraints must be applied to individual alternatives;
+
+Expressions support arithmetic, comparisons, `in`, `~`, `&&`, `||`, unary
+`! + -`, groups, and function calls.
 
 ## Type ordering
 
