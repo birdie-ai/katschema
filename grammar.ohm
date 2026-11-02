@@ -25,15 +25,20 @@ Katschema {
     SchemaAtom ("|" SchemaAtom)*
 
   SchemaAtom =
-    "(" Type ("," Clause)* ")"
+    "(" Type ("," Clause)* ","? ")"
 
   Type =
+    TypeSum
+    | Ref
+    | Collection
+
+  TypeSum =
+    TypeAtom "|" TypeAtom ("|" TypeAtom)*
+
+  TypeAtom =
     Ref
     | Collection
-    | SchemaSum
-
-  SchemaSum =
-    SchemaAtom "|" SchemaAtom ("|" SchemaAtom)*
+    | SchemaAtom
     
   Clause =
     LogicalExpr

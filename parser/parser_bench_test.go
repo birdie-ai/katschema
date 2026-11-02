@@ -24,6 +24,10 @@ func parseBenchmarkInputs() []testcase {
 		{name: "JSON/long_number", src: strings.Repeat("9", 8192) + "." + strings.Repeat("9", 8192) + "e+" + strings.Repeat("9", 8192), json: true},
 		{name: "Schema/basic", src: `{"name":(string),"age":(int)}`},
 		{name: "Schema/structural", src: `({"name":(string),"address":({"city":(string),"country":(string)}),"tags":[(string)]})`},
+		{name: "Schema/metadata_few", src: `(string,optional,label="Name")`},
+		{name: "Schema/metadata_many", src: `(string,` + strings.Repeat(`label="Name",`, 128) + `)`},
+		{name: "Sum/whole_metadata", src: `{"value":(string|int,optional,label="Value")}`},
+		{name: "Sum/branch_metadata", src: `{"value":(string,label="Text")|(int,label="Number")}`},
 		{name: "Comments/long", src: "/*" + strings.Repeat(" a comment line\n", 8192) + "*/null"},
 		{name: "Comments/many", src: "[" + strings.Repeat("/* item */1,// line\n", 4095) + "/* last */1]"},
 	}
@@ -46,6 +50,12 @@ func parseBenchmarkInputs() []testcase {
 			src:  strings.Repeat("[", depth) + "null" + strings.Repeat("]", depth),
 			json: true,
 		})
+	}
+	for _, count := range []int{2, 128, 1024} {
+		inputs = append(inputs,
+			testcase{name: fmt.Sprintf("Sum/inner_%d", count), src: "(" + strings.Repeat("int|", count-1) + "string)"},
+			testcase{name: fmt.Sprintf("Sum/outer_%d", count), src: strings.Repeat("(int)|", count-1) + "(string)"},
+		)
 	}
 	return inputs
 }

@@ -22,12 +22,10 @@ func (typ Type) Valid(t *ast.Tree, value ast.NodeID) bool {
 func (typ Type) validAST(t *ast.Tree, value ast.NodeID, inList bool) bool {
 	valueKind := t.Node(value).Kind()
 	switch valueKind {
-	case ast.Schema:
+	case ast.Schema, ast.Sum:
 		if inList {
 			return false
 		}
-		fallthrough
-	case ast.Sum:
 		values := NewArena()
 		id, err := Compile(values, t, value)
 		return err == nil && typ.ValidType(values.Type(id))

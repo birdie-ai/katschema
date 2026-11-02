@@ -15,14 +15,14 @@ func ExampleParse() {
 		"version": 2,
 		"enabled": true,
 		"owner": ({
-			"id": (string, pk),
+			"id": (string | int, pk),
 			"name": (string),
 			"email": (string, optional),
 		}),
 		"endpoints": ([{
 			"path": (string),
 			"methods": [(string)],
-			"timeout": (real),
+			"timeout": (real, unit="seconds") | (string, format="duration"),
 		}]),
 		"defaults": {
 			"retries": 3,
@@ -39,6 +39,6 @@ func ExampleParse() {
 	}
 	fmt.Printf("\nComments: %d\n", len(tree.Comments()))
 	// Output:
-	// {"service":"catalog","version":2,"enabled":true,"owner":({"id":(string,pk),"name":(string),"email":(string,optional)}),"endpoints":([{"path":(string),"methods":[(string)],"timeout":(real)}]),"defaults":{"retries":3,"timeout":2.5e+1,"fallback":null}}
+	// {"service":"catalog","version":2,"enabled":true,"owner":({"id":(string|int,pk),"name":(string),"email":(string,optional)}),"endpoints":([{"path":(string),"methods":[(string)],"timeout":(real,unit="seconds")|(string,format="duration")}]),"defaults":{"retries":3,"timeout":2.5e+1,"fallback":null}}
 	// Comments: 1
 }

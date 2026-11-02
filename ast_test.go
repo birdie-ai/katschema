@@ -276,7 +276,7 @@ func TestValidateASTSchemaExpressions(t *testing.T) {
 		{"list schema", ks.Any(), ks.List(ks.Int()), false},
 		{"singleton list schema", ks.Any(), ks.List(singleton), false},
 		{"nested singleton list schema", ks.Any(), ks.List(ks.Object(ks.Field("id", singleton))), false},
-		{"sum singleton list value", ks.Any(), ks.List(ks.Sum(singleton, singleton)), true},
+		{name: "sum singleton list schema", schema: ks.Any(), value: ks.List(ks.Sum(singleton, singleton)), valid: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
