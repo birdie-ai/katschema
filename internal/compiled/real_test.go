@@ -1,39 +1,14 @@
 package compiled
 
-import (
-	"testing"
-
-	"github.com/birdie-ai/katschema/ks"
-	"github.com/birdie-ai/katschema/parser/ast"
-	"github.com/birdie-ai/katschema/parser/token"
-)
+import "testing"
 
 func TestRealLiteralInterningIsExact(t *testing.T) {
 	t.Parallel()
 
-	s := token.UnknownSpan()
-	tree := ast.New()
 	a := NewArena()
-
-	// NOTE(i4k): we are interning literal decimal "1.0100" to (real, x == "1.0100")
-	x := tree.AddDecimal("1.0100", s)
-	y := tree.AddDecimal("1.01e0", s)
-	z := tree.AddSchema(tree.AddName("real", s), []ast.NodeID{
-		tree.AddConstraint(tree.AddBinary(tree.AddIdent("x", s), token.Eq, tree.AddDecimal("1.0100", s), s), s),
-	}, s)
-
-	xid, err := Compile(a, tree, x)
-	if err != nil {
-		t.Fatal(err)
-	}
-	yid, err := Compile(a, tree, y)
-	if err != nil {
-		t.Fatal(err)
-	}
-	zid, err := Compile(a, tree, z)
-	if err != nil {
-		t.Fatal(err)
-	}
+	xid := compileText(t, a, "1.0100")
+	yid := compileText(t, a, "1.01e0")
+	zid := compileText(t, a, "(real, x == 1.0100)")
 	if xid != yid {
 		t.Fatalf("exactly equal real literals have different IDs: %d != %d", xid, yid)
 	}
@@ -49,10 +24,10 @@ func TestFloatAliasesAndSubtyping(t *testing.T) {
 	t.Parallel()
 
 	a := NewArena()
-	f32Type := compile(t, a, ks.Float32())
-	f64Type := compile(t, a, ks.Float64())
-	floatAlias := compile(t, a, ks.Float())
-	realType := compile(t, a, ks.Real())
+	f32Type := compileText(t, a, "(float32)")
+	f64Type := compileText(t, a, "(float64)")
+	floatAlias := compileText(t, a, "(float)")
+	realType := compileText(t, a, "(real)")
 
 	if floatAlias != f64Type {
 		t.Fatalf("float alias = %d, want float64 %d", floatAlias, f64Type)

@@ -13,38 +13,47 @@ func TestMarshalJSON(t *testing.T) {
 
 	type testcase struct {
 		name  string
-		value ks.Value
+		value string
 		want  string
 	}
-	tests := []testcase{
-		{"empty array", ks.List(), "[]"},
-		{"empty object", ks.Object(), "{}"},
-		{"nested arrays", ks.List(ks.LitInt(3), ks.LitNull(), ks.LitInt(3), ks.List(ks.LitString("x"), ks.LitBool(false))), `[3,null,3,["x",false]]`},
-		{"object fields", ks.Object(ks.Field("z", ks.List()), ks.Field("a", ks.Object())), `{"a":{},"z":[]}`},
+	for _, tc := range []testcase{
+		{name: "empty array", value: "[]", want: "[]"},
+		{name: "empty object", value: "{}", want: "{}"},
+		{name: "nested arrays", value: `[3, null, 3, ["x", false]]`, want: `[3,null,3,["x",false]]`},
+		{name: "object fields", value: `{"z": [], "a": {}}`, want: `{"a":{},"z":[]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			value := compileText(t, katschema.NewCompiler(), tc.value)
+			checkMarshalJSON(t, value, tc.want)
+		})
 	}
 	for _, tc := range scalarTestcases() {
-		tests = append(tests, testcase{tc.name, tc.value, tc.wantJSON})
-	}
-	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			value := compile(t, katschema.NewCompiler(), tc.value)
-			got, err := value.MarshalJSON()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(got) != tc.want {
-				t.Fatalf("MarshalJSON = %s, want %s", got, tc.want)
-			}
-			if !json.Valid(got) {
-				t.Fatalf("MarshalJSON returned invalid JSON: %q", got)
-			}
-			wrapped, err := json.Marshal(value)
-			if err != nil || string(wrapped) != tc.want {
-				t.Fatalf("json.Marshal = %s, %v; want %s", wrapped, err, tc.want)
-			}
+			checkMarshalJSON(t, value, tc.wantJSON)
 		})
+	}
+}
+
+func checkMarshalJSON(t *testing.T, value katschema.Type, want string) {
+	t.Helper()
+	got, err := value.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Fatalf("MarshalJSON = %s, want %s", got, want)
+	}
+	if !json.Valid(got) {
+		t.Fatalf("MarshalJSON returned invalid JSON: %q", got)
+	}
+	wrapped, err := json.Marshal(value)
+	if err != nil || string(wrapped) != want {
+		t.Fatalf("json.Marshal = %s, %v; want %s", wrapped, err, want)
 	}
 }
 
@@ -76,14 +85,14 @@ func TestMarshalJSONStrings(t *testing.T) {
 func TestMarshalJSONOverlay(t *testing.T) {
 	t.Parallel()
 
-	bottom := compile(t, katschema.NewCompiler(), ks.With(ks.Object(
-		ks.Field("id", ks.With(ks.String(), ks.Check(ks.Binary(ks.X(), ks.Eq, ks.StrExpr("one"))), ks.Flag("pk"))),
-		ks.Field("version", ks.LitInt(1)),
-	), ks.Attr("source", ks.StrExpr("input"))))
-	top := compile(t, katschema.NewCompiler(), ks.Object(
-		ks.Field("version", ks.LitInt(2)),
-		ks.Field("updated_at", ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Eq, ks.IntExpr(10))), ks.Flag("generated"))),
-	))
+	bottom := compileText(t, katschema.NewCompiler(), `({
+		"id": (string, x == "one", pk),
+		"version": 1
+	}, source="input")`)
+	top := compileText(t, katschema.NewCompiler(), `{
+		"version": 2,
+		"updated_at": (int, x == 10, generated)
+	}`)
 	value, err := katschema.Overlay(bottom, top)
 	if err != nil {
 		t.Fatal(err)
@@ -102,36 +111,25 @@ func TestMarshalJSONOverlay(t *testing.T) {
 func TestMarshalJSONRejectsInvalidValues(t *testing.T) {
 	t.Parallel()
 
-	singleton := ks.Where(ks.Int(), ks.Binary(ks.X(), ks.Eq, ks.IntExpr(1)))
 	type testcase struct {
 		name  string
-		value ks.Value
+		value string
 	}
 	for _, tc := range []testcase{
-		{"any", ks.Any()},
-		{"never", ks.Never()},
-		{"int", ks.Int()},
-		{"sum", ks.Sum(ks.LitInt(1), ks.LitInt(2))},
-		{"range", ks.Where(ks.Int(), ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0)))},
-		{"list schema", ks.List(ks.Int())},
-		{"object schema", ks.Object(ks.Field("id", ks.Int()))},
-		{"optional singleton", ks.Object(ks.Field("id", ks.Optional(singleton)))},
-		{"nested schema", ks.Object(ks.Field("nested", ks.Object(ks.Field("id", ks.Int()))))},
-		{"invalid string", ks.LitString("\xff")},
-		{"invalid field name", ks.Object(ks.Field("\xff", ks.LitInt(1)))},
-		{"nested invalid string", ks.List(ks.LitInt(1), ks.LitString("\xff"))},
+		{name: "any", value: "(any)"},
+		{name: "never", value: "(never)"},
+		{name: "int", value: "(int)"},
+		{name: "range", value: "(int, x > 0)"},
+		{name: "list schema", value: "[(int)]"},
+		{name: "object schema", value: `{"id": (int)}`},
+		{name: "optional singleton", value: `{"id": (int, x == 1, optional)}`},
+		{name: "nested schema", value: `{"nested": {"id": (int)}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			value := compile(t, katschema.NewCompiler(), tc.value)
-			got, err := value.MarshalJSON()
-			if err == nil || got != nil {
-				t.Fatalf("MarshalJSON = %q, %v; want nil bytes and error", got, err)
-			}
-			if _, err := json.Marshal(value); err == nil {
-				t.Fatal("json.Marshal accepted invalid value")
-			}
+			value := compileText(t, katschema.NewCompiler(), tc.value)
+			checkMarshalJSONError(t, value)
 		})
 	}
 	if got, err := (katschema.Type{}).MarshalJSON(); err == nil || got != nil {
@@ -139,14 +137,44 @@ func TestMarshalJSONRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestMarshalJSONRejectsInvalidDSLValues(t *testing.T) {
+	t.Parallel()
+
+	type testcase struct {
+		name  string
+		value ks.Value
+	}
+	for _, tc := range []testcase{
+		{name: "sum", value: ks.Sum(ks.LitInt(1), ks.LitInt(2))},
+		{name: "invalid string", value: ks.LitString("\xff")},
+		{name: "invalid field name", value: ks.Object(ks.Field("\xff", ks.LitInt(1)))},
+		{name: "nested invalid string", value: ks.List(ks.LitInt(1), ks.LitString("\xff"))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			value := compile(t, katschema.NewCompiler(), tc.value)
+			checkMarshalJSONError(t, value)
+		})
+	}
+}
+
+func checkMarshalJSONError(t *testing.T, value katschema.Type) {
+	t.Helper()
+	got, err := value.MarshalJSON()
+	if err == nil || got != nil {
+		t.Fatalf("MarshalJSON = %q, %v; want nil bytes and error", got, err)
+	}
+	if _, err := json.Marshal(value); err == nil {
+		t.Fatal("json.Marshal accepted invalid value")
+	}
+}
+
 func TestMarshalJSONRejectsInvalidOverlay(t *testing.T) {
 	t.Parallel()
 
-	bottom := compile(t, katschema.NewCompiler(), ks.Where(
-		ks.Object(ks.Field("id", ks.LitInt(1))),
-		ks.Binary(ks.Funcall("len", ks.X()), ks.Le, ks.IntExpr(1)),
-	))
-	top := compile(t, katschema.NewCompiler(), ks.Object(ks.Field("extra", ks.LitInt(2))))
+	bottom := compileText(t, katschema.NewCompiler(), `({"id": 1}, len(x) <= 1)`)
+	top := compileText(t, katschema.NewCompiler(), `{"extra": 2}`)
 	value, err := katschema.Overlay(bottom, top)
 	if err != nil {
 		t.Fatal(err)

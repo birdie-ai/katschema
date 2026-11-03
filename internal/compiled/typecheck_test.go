@@ -3,7 +3,6 @@ package compiled
 import (
 	"testing"
 
-	"github.com/birdie-ai/katschema/ks"
 	"github.com/birdie-ai/katschema/math/decimal"
 )
 
@@ -12,8 +11,8 @@ func TestTypeCheck(t *testing.T) {
 
 	type testcase struct {
 		name      string
-		schema    ks.Value
-		value     ks.Value
+		schema    string
+		value     string
 		check     func(*testing.T, *Arena, TypeID)
 		wantError bool
 	}
@@ -21,58 +20,58 @@ func TestTypeCheck(t *testing.T) {
 	for _, tc := range []testcase{
 		{
 			name:   "literal keeps int context",
-			schema: ks.Int(),
-			value:  ks.LitInt(10),
+			schema: "(int)",
+			value:  "10",
 			check: func(t *testing.T, a *Arena, got TypeID) {
-				if got != compile(t, a, ks.LitInt(10)) {
+				if got != compileText(t, a, "10") {
 					t.Fatalf("typed literal = %d, want the canonical int literal", got)
 				}
 			},
 		},
 		{
 			name:   "literal int schema returns literal",
-			schema: ks.LitInt(10),
-			value:  ks.LitInt(10),
+			schema: "10",
+			value:  "10",
 			check: func(t *testing.T, a *Arena, got TypeID) {
-				if got != compile(t, a, ks.LitInt(10)) {
+				if got != compileText(t, a, "10") {
 					t.Fatalf("typed literal = %d, want the canonical int literal", got)
 				}
 			},
 		},
 		{
 			name:   "sum schema returns type of matched value - literal int",
-			schema: ks.Sum(ks.Int(), ks.String()),
-			value:  ks.LitInt(10),
+			schema: "(int) | (string)",
+			value:  "10",
 			check: func(t *testing.T, a *Arena, got TypeID) {
-				if got != compile(t, a, ks.LitInt(10)) {
+				if got != compileText(t, a, "10") {
 					t.Fatalf("typed literal = %d, want the canonical int literal", got)
 				}
 			},
 		},
 		{
 			name:   "sum schema returns type of matched value - string",
-			schema: ks.Sum(ks.Int(), ks.String()),
-			value:  ks.LitString("test"),
+			schema: "(int) | (string)",
+			value:  `"test"`,
 			check: func(t *testing.T, a *Arena, got TypeID) {
-				if got != compile(t, a, ks.LitString("test")) {
+				if got != compileText(t, a, `"test"`) {
 					t.Fatalf("typed literal = %d, want the canonical int literal", got)
 				}
 			},
 		},
 		{
 			name:   "list entries are converted",
-			schema: ks.List(ks.Int()),
-			value:  ks.List(ks.LitInt(1), ks.LitInt(2), ks.LitInt(3)),
+			schema: "[(int)]",
+			value:  "[1, 2, 3]",
 			check: func(t *testing.T, a *Arena, got TypeID) {
-				if got != compile(t, a, ks.List(ks.LitInt(1), ks.LitInt(2), ks.LitInt(3))) {
+				if got != compileText(t, a, "[1, 2, 3]") {
 					t.Fatalf("typed literal = %d, want the canonical int literal", got)
 				}
 			},
 		},
 		{
 			name:   "integer is interpreted as real",
-			schema: ks.Real(),
-			value:  ks.LitInt(10),
+			schema: "(real)",
+			value:  "10",
 			check: func(t *testing.T, a *Arena, got TypeID) {
 				if a.Type(got).Base().ID() != a.Real() {
 					t.Fatalf("typed literal base = %d, want real %d", a.Type(got).Base().ID(), a.Real())
@@ -82,8 +81,8 @@ func TestTypeCheck(t *testing.T) {
 		},
 		{
 			name:   "decimal is interpreted as float32",
-			schema: ks.Where(ks.Float32(), ks.Binary(ks.X(), ks.Lt, ks.DecimalExpr("100"))),
-			value:  ks.LitDecimal("31.5"),
+			schema: "(float32, x < 100.0)",
+			value:  "31.5",
 			check: func(t *testing.T, a *Arena, got TypeID) {
 				if a.Type(got).Base().ID() != a.Float32() {
 					t.Fatalf("typed literal base = %d, want float32 %d", a.Type(got).Base().ID(), a.Float32())
@@ -93,20 +92,12 @@ func TestTypeCheck(t *testing.T) {
 		},
 		{
 			name: "object fields are interpreted recursively",
-			schema: ks.Object(
-				ks.Field("temp", ks.Float32()),
-				ks.Field("name", ks.String()),
-				ks.Field("metadata", ks.Object(
-					ks.Field("a", ks.With(ks.String(), ks.Check(ks.Binary(ks.X(), ks.In, ks.ListExpr(ks.LitString("abc"), ks.LitString("xyz")))))),
-				)),
-			),
-			value: ks.Object(
-				ks.Field("metadata", ks.Object(
-					ks.Field("a", ks.LitString("abc")),
-				)),
-				ks.Field("temp", ks.LitDecimal("31.5")),
-				ks.Field("name", ks.LitString("weather")),
-			),
+			schema: `{
+				"temp": (float32),
+				"name": (string),
+				"metadata": {"a": (string, x in ["abc", "xyz"])}
+			}`,
+			value: `{"metadata": {"a": "abc"}, "temp": 31.5, "name": "weather"}`,
 			check: func(t *testing.T, a *Arena, got TypeID) {
 				fields := a.Type(got).Fields()
 				if fields.Len() != 3 {
@@ -138,17 +129,12 @@ func TestTypeCheck(t *testing.T) {
 		{
 
 			name: "schema with object and optional fields makes returned value omit not present fields",
-			schema: ks.Object(
-				ks.Field("temp", ks.Float32()),
-				ks.Field("name", ks.String()),
-				ks.Field("metadata", ks.Optional(ks.Object(
-					ks.Field("a", ks.With(ks.String(), ks.Check(ks.Binary(ks.X(), ks.In, ks.ListExpr(ks.LitString("abc"), ks.LitString("xyz")))))),
-				))),
-			),
-			value: ks.Object(
-				ks.Field("temp", ks.LitDecimal("31.5")),
-				ks.Field("name", ks.LitString("weather")),
-			),
+			schema: `{
+				"temp": (float32),
+				"name": (string),
+				"metadata": ({"a": (string, x in ["abc", "xyz"])}, optional)
+			}`,
+			value: `{"temp": 31.5, "name": "weather"}`,
 			check: func(t *testing.T, a *Arena, got TypeID) {
 				fields := a.Type(got).Fields()
 				if fields.Len() != 2 {
@@ -166,25 +152,16 @@ func TestTypeCheck(t *testing.T) {
 		},
 		{
 			name:      "value outside schema is rejected",
-			schema:    ks.Int(),
-			value:     ks.LitDecimal("10.5"),
+			schema:    "(int)",
+			value:     "10.5",
 			wantError: true,
 		},
 		{
-			name: "refined value keeps its context",
-			schema: ks.Where(
-				ks.Int(),
-				ks.Binary(ks.X(), ks.Ge, ks.IntExpr(0)),
-			),
-			value: ks.Where(
-				ks.Int(),
-				ks.Binary(ks.X(), ks.Gt, ks.IntExpr(10)),
-			),
+			name:   "refined value keeps its context",
+			schema: "(int, x >= 0)",
+			value:  "(int, x > 10)",
 			check: func(t *testing.T, a *Arena, got TypeID) {
-				want := compile(t, a, ks.Where(
-					ks.Int(),
-					ks.Binary(ks.X(), ks.Gt, ks.IntExpr(10)),
-				))
+				want := compileText(t, a, "(int, x > 10)")
 				if got != want {
 					t.Fatalf("typed refined value = %d, want original value context %d", got, want)
 				}
@@ -193,8 +170,8 @@ func TestTypeCheck(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := NewArena()
-			schema := compile(t, a, tc.schema)
-			value := compile(t, a, tc.value)
+			schema := compileText(t, a, tc.schema)
+			value := compileText(t, a, tc.value)
 			got, err := a.TypeCheck(schema, value)
 			if tc.wantError {
 				if err == nil {

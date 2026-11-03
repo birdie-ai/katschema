@@ -1,34 +1,34 @@
 package katschema_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/birdie-ai/katschema"
-	"github.com/birdie-ai/katschema/ks"
 )
 
 func TestTupleAccess(t *testing.T) {
 	t.Parallel()
 
-	values := []ks.Value{
-		ks.LitInt(2),
-		ks.LitInt(1),
-		ks.LitInt(2),
-		ks.LitNull(),
-		ks.LitBool(false),
-		ks.LitString("birdie"),
-		ks.LitDecimal("1.25"),
-		ks.List(),
-		ks.List(ks.LitBool(true)),
-		ks.Object(ks.Field("name", ks.LitString("birdie"))),
+	values := []string{
+		"2",
+		"1",
+		"2",
+		"null",
+		"false",
+		`"birdie"`,
+		"1.25",
+		"[]",
+		"[true]",
+		`{"name": "birdie"}`,
 	}
-	tuple := compile(t, katschema.NewCompiler(), ks.List(values...))
+	tuple := compileText(t, katschema.NewCompiler(), "["+strings.Join(values, ",")+"]")
 	if tuple.Kind() != katschema.Tuple || tuple.Len() != len(values) {
 		t.Fatalf("kind=%v len=%d, want tuple of length %d", tuple.Kind(), tuple.Len(), len(values))
 	}
 	for i, value := range values {
 		got := tuple.At(i)
-		want := compile(t, katschema.NewCompiler(), value)
+		want := compileText(t, katschema.NewCompiler(), value)
 		if !got.Equivalent(want) {
 			t.Fatalf("At(%d) differs from the source element", i)
 		}
@@ -63,10 +63,10 @@ func TestTupleAccessPanics(t *testing.T) {
 		}
 		cc := katschema.NewCompiler()
 		for _, tc := range []testcase{
-			{"zero type", katschema.Type{}, 0},
-			{"list schema", compile(t, cc, ks.List(ks.Int())), 0},
-			{"scalar", compile(t, cc, ks.LitInt(1)), 0},
-			{"object", compile(t, cc, ks.Object(ks.Field("id", ks.LitInt(1)))), 1},
+			{name: "zero type", typ: katschema.Type{}, len: 0},
+			{name: "list schema", typ: compileText(t, cc, "[(int)]"), len: 0},
+			{name: "scalar", typ: compileText(t, cc, "1"), len: 0},
+			{name: "object", typ: compileText(t, cc, `{"id": 1}`), len: 1},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				if got := tc.typ.Len(); got != tc.len {
@@ -84,13 +84,9 @@ func TestTupleAccessPanics(t *testing.T) {
 
 	t.Run("indexing", func(t *testing.T) {
 		cc := katschema.NewCompiler()
-		values := []ks.Value{
-			ks.LitInt(2),
-			ks.LitInt(1),
-		}
-		tuple := compile(t, cc, ks.List(values...))
-		if tuple.Kind() != katschema.Tuple || tuple.Len() != len(values) {
-			t.Fatalf("kind=%v len=%d, want tuple of length %d", tuple.Kind(), tuple.Len(), len(values))
+		tuple := compileText(t, cc, "[2, 1]")
+		if tuple.Kind() != katschema.Tuple || tuple.Len() != 2 {
+			t.Fatalf("kind=%v len=%d, want tuple of length 2", tuple.Kind(), tuple.Len())
 		}
 		for _, index := range []int{
 			-1, 3, 10, -10,
@@ -108,13 +104,8 @@ func TestTupleAccessPanics(t *testing.T) {
 func TestTupleAccessThroughOverlay(t *testing.T) {
 	t.Parallel()
 
-	bottom := compile(t, katschema.NewCompiler(), ks.Object(
-		ks.Field("kept", ks.List(ks.LitString("bottom"))),
-		ks.Field("replaced", ks.List(ks.LitString("old"))),
-	))
-	top := compile(t, katschema.NewCompiler(), ks.Object(
-		ks.Field("replaced", ks.List(ks.LitString("top"))),
-	))
+	bottom := compileText(t, katschema.NewCompiler(), `{"kept": ["bottom"], "replaced": ["old"]}`)
+	top := compileText(t, katschema.NewCompiler(), `{"replaced": ["top"]}`)
 	merged, err := katschema.Overlay(bottom, top)
 	if err != nil {
 		t.Fatal(err)

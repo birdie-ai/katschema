@@ -14,48 +14,24 @@ func TestCompileSumStructuralContext(t *testing.T) {
 	t.Parallel()
 	type testcase struct {
 		name string
-		root func(*ast.Tree) ast.NodeID
+		src  string
 		want ks.Value
 	}
-	z := token.UnknownSpan()
 	for _, tc := range []testcase{
 		{
 			name: "type sum contains a list type",
-			root: func(a *ast.Tree) ast.NodeID {
-				return a.AddSchema(a.AddSum(
-					a.AddList([]ast.NodeID{a.AddInt("10", z)}, z),
-					a.AddName("string", z), z), nil, z)
-			},
+			src:  "([10] | string)",
 			want: ks.Sum(ks.With(ks.List(ks.LitInt(10))), ks.String()),
 		},
 		{
-			name: "value sum contains a literal tuple",
-			root: func(a *ast.Tree) ast.NodeID {
-				return a.AddSum(
-					a.AddList([]ast.NodeID{a.AddInt("10", z)}, z),
-					a.AddSchema(a.AddName("string", z), nil, z), z)
-			},
-			want: ks.Sum(ks.List(ks.LitInt(10)), ks.String()),
-		},
-		{
 			name: "nested type sum retains list context",
-			root: func(a *ast.Tree) ast.NodeID {
-				return a.AddSchema(a.AddSum(
-					a.AddSum(a.AddList([]ast.NodeID{a.AddInt("10", z)}, z),
-						a.AddName("string", z), z),
-					a.AddName("bool", z), z), nil, z)
-			},
+			src:  "([10] | string | bool)",
 			want: ks.Sum(ks.With(ks.List(ks.LitInt(10))), ks.String(), ks.Bool()),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tree := ast.New()
-			root := tc.root(tree)
 			arena := NewArena()
-			got, err := Compile(arena, tree, root)
-			if err != nil {
-				t.Fatal(err)
-			}
+			got := compileText(t, arena, tc.src)
 			if want := compile(t, arena, tc.want); got != want {
 				t.Fatalf("compiled type = %d, want %d", got, want)
 			}
@@ -63,26 +39,40 @@ func TestCompileSumStructuralContext(t *testing.T) {
 	}
 }
 
+func TestCompileSumLiteralContext(t *testing.T) {
+	t.Parallel()
+	z := token.UnknownSpan()
+	tree := ast.New()
+	root := tree.AddSum(
+		tree.AddList([]ast.NodeID{tree.AddInt("10", z)}, z),
+		tree.AddSchema(tree.AddName("string", z), nil, z), z)
+	arena := NewArena()
+	got, err := Compile(arena, tree, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := compile(t, arena, ks.Sum(ks.List(ks.LitInt(10)), ks.String())); got != want {
+		t.Fatalf("compiled type = %d, want %d", got, want)
+	}
+}
+
 func TestCompileListOfSums(t *testing.T) {
 	t.Parallel()
 	arena := NewArena()
-	typ := compile(t, arena, ks.List(ks.Sum(ks.Int(), ks.String())))
+	typ := compileText(t, arena, "[(int) | (string)]")
 	if got := arena.Type(typ).Kind(); got != List {
 		t.Fatalf("kind = %v, want List", got)
 	}
 	type testcase struct {
-		value ks.Value
+		value string
 		want  bool
 	}
 	for _, tc := range []testcase{
-		{value: ks.List(), want: true},
-		{value: ks.List(ks.LitInt(1), ks.LitString("a")), want: true},
-		{value: ks.List(ks.LitBool(true)), want: false},
+		{value: "[]", want: true},
+		{value: `[1, "a"]`, want: true},
+		{value: "[true]", want: false},
 	} {
-		tree, root, err := ks.Build(tc.value)
-		if err != nil {
-			t.Fatal(err)
-		}
+		tree, root := parseText(t, tc.value)
 		if got := arena.Valid(typ, tree, root); got != tc.want {
 			t.Fatalf("Valid = %v, want %v", got, tc.want)
 		}
@@ -97,14 +87,8 @@ func TestCompileSumConstraints(t *testing.T) {
 		resolve TypeResolver
 	}
 	z := token.UnknownSpan()
-	aliasTree, aliasRoot, err := ks.Build(ks.Sum(ks.Int(), ks.String()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	metadataTree, metadataRoot, err := ks.Build(ks.With(ks.Sum(ks.Int(), ks.String()), ks.Flag("owner")))
-	if err != nil {
-		t.Fatal(err)
-	}
+	aliasTree, aliasRoot := parseText(t, "(int) | (string)")
+	metadataTree, metadataRoot := parseText(t, "((int) | (string), owner)")
 	for _, tc := range []testcase{
 		{
 			name: "direct sum",
@@ -157,24 +141,18 @@ func TestCompileSumConstraints(t *testing.T) {
 func TestCompileSumBranchConstraints(t *testing.T) {
 	t.Parallel()
 	arena := NewArena()
-	typ := compile(t, arena, ks.Sum(
-		ks.Where(ks.Int(), ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0))),
-		ks.Where(ks.String(), ks.Binary(ks.Funcall("len", ks.X()), ks.Gt, ks.IntExpr(0))),
-	))
+	typ := compileText(t, arena, "(int, x > 0) | (string, len(x) > 0)")
 	type testcase struct {
-		value ks.Value
+		value string
 		want  bool
 	}
 	for _, tc := range []testcase{
-		{value: ks.LitInt(1), want: true},
-		{value: ks.LitInt(0), want: false},
-		{value: ks.LitString("a"), want: true},
-		{value: ks.LitString(""), want: false},
+		{value: "1", want: true},
+		{value: "0", want: false},
+		{value: `"a"`, want: true},
+		{value: `""`, want: false},
 	} {
-		tree, root, err := ks.Build(tc.value)
-		if err != nil {
-			t.Fatal(err)
-		}
+		tree, root := parseText(t, tc.value)
 		if got := arena.Valid(typ, tree, root); got != tc.want {
 			t.Fatalf("Valid = %v, want %v", got, tc.want)
 		}

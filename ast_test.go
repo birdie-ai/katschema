@@ -23,6 +23,16 @@ func parseAST(t *testing.T, source string) (*ast.Tree, ast.NodeID) {
 	return tree, root
 }
 
+func compileText(t *testing.T, c *katschema.Compiler, source string) katschema.Type {
+	t.Helper()
+	tree, root := parseAST(t, source)
+	typ, err := c.CompileAST(t.Context(), tree, root)
+	if err != nil {
+		t.Fatalf("compile %q: %v", source, err)
+	}
+	return typ
+}
+
 func TestCompileAST(t *testing.T) {
 	t.Parallel()
 
@@ -188,51 +198,45 @@ func TestASTInvalidInput(t *testing.T) {
 func TestValidateASTMatchesCompiledLiterals(t *testing.T) {
 	t.Parallel()
 
-	large := new(big.Int).Lsh(big.NewInt(1), 100)
-	lengthOne := ks.Binary(
-		ks.Binary(ks.Funcall("len", ks.X()), ks.Ge, ks.IntExpr(1)),
-		ks.And,
-		ks.Binary(ks.Funcall("len", ks.X()), ks.Le, ks.IntExpr(1)),
-	)
-	object := ks.Object(ks.Field("id", ks.String()), ks.Field("tags", ks.Optional(ks.List(ks.String()))))
+	const object = `{"id": (string), "tags": ([(string)], optional)}`
 
 	type testcase struct {
 		name   string
-		schema ks.Value
+		schema string
 		source string
 		valid  bool
 	}
 
 	for _, tc := range []testcase{
-		{"nested any", ks.Any(), `{"items": [null, true, {}, [], 1.25]}`, true},
-		{"large integer", ks.LitBigInt(large), `1267650600228229401496703205376`, true},
-		{"neighboring integer", ks.LitBigInt(large), `1267650600228229401496703205377`, false},
-		{"integer as real", ks.Real(), `1267650600228229401496703205376`, true},
-		{"exact decimal", ks.LitDecimal("9007199254740993.125"), `9007199254740993.1250`, true},
-		{"neighboring decimal", ks.LitDecimal("9007199254740993.125"), `9007199254740993.126`, false},
-		{"large exponent", ks.Real(), `1e1000000`, true},
-		{"decimal as integer", ks.Int(), `1.0`, false},
-		{"bounded integer", ks.Int8(), `128`, false},
-		{"unicode length", ks.Where(ks.String(), lengthOne), `"é"`, true},
-		{"unicode too long", ks.Where(ks.String(), lengthOne), `"éø"`, false},
-		{"list length", ks.Where(ks.List(ks.Int()), lengthOne), `[1]`, true},
-		{"empty list length", ks.Where(ks.List(ks.Int()), lengthOne), `[]`, false},
-		{"optional omitted", object, `{"id": "one"}`, true},
-		{"unordered fields", object, `{"tags": ["a", "b"], "id": "one"}`, true},
-		{"wrong element", object, `{"id": "one", "tags": ["a", 2]}`, false},
-		{"missing required", object, `{"tags": []}`, false},
-		{"unknown field", object, `{"id": "one", "internal": true}`, false},
-		{"object length", ks.Where(ks.Object(ks.Field("id", ks.Optional(ks.Int()))), lengthOne), `{"id": 1}`, true},
-		{"empty object length", ks.Where(ks.Object(ks.Field("id", ks.Optional(ks.Int()))), lengthOne), `{}`, false},
-		{"tuple", ks.List(ks.LitInt(1), ks.LitString("a")), `[1, "a"]`, true},
-		{"tuple order", ks.List(ks.LitInt(1), ks.LitString("a")), `["a", 1]`, false},
-		{"sum", ks.Sum(ks.Int(), ks.String()), `"one"`, true},
-		{"sum mismatch", ks.Sum(ks.Int(), ks.String()), `false`, false},
-		{"never", ks.Never(), `null`, false},
+		{name: "nested any", schema: "(any)", source: `{"items": [null, true, {}, [], 1.25]}`, valid: true},
+		{name: "large integer", schema: "1267650600228229401496703205376", source: "1267650600228229401496703205376", valid: true},
+		{name: "neighboring integer", schema: "1267650600228229401496703205376", source: "1267650600228229401496703205377", valid: false},
+		{name: "integer as real", schema: "(real)", source: "1267650600228229401496703205376", valid: true},
+		{name: "exact decimal", schema: "9007199254740993.125", source: "9007199254740993.1250", valid: true},
+		{name: "neighboring decimal", schema: "9007199254740993.125", source: "9007199254740993.126", valid: false},
+		{name: "large exponent", schema: "(real)", source: "1e1000000", valid: true},
+		{name: "decimal as integer", schema: "(int)", source: "1.0", valid: false},
+		{name: "bounded integer", schema: "(int8)", source: "128", valid: false},
+		{name: "unicode length", schema: "(string, len(x) >= 1 && len(x) <= 1)", source: `"é"`, valid: true},
+		{name: "unicode too long", schema: "(string, len(x) >= 1 && len(x) <= 1)", source: `"éø"`, valid: false},
+		{name: "list length", schema: "([(int)], len(x) >= 1 && len(x) <= 1)", source: "[1]", valid: true},
+		{name: "empty list length", schema: "([(int)], len(x) >= 1 && len(x) <= 1)", source: "[]", valid: false},
+		{name: "optional omitted", schema: object, source: `{"id": "one"}`, valid: true},
+		{name: "unordered fields", schema: object, source: `{"tags": ["a", "b"], "id": "one"}`, valid: true},
+		{name: "wrong element", schema: object, source: `{"id": "one", "tags": ["a", 2]}`, valid: false},
+		{name: "missing required", schema: object, source: `{"tags": []}`, valid: false},
+		{name: "unknown field", schema: object, source: `{"id": "one", "internal": true}`, valid: false},
+		{name: "object length", schema: `({"id": (int, optional)}, len(x) >= 1 && len(x) <= 1)`, source: `{"id": 1}`, valid: true},
+		{name: "empty object length", schema: `({"id": (int, optional)}, len(x) >= 1 && len(x) <= 1)`, source: "{}", valid: false},
+		{name: "tuple", schema: `[1, "a"]`, source: `[1, "a"]`, valid: true},
+		{name: "tuple order", schema: `[1, "a"]`, source: `["a", 1]`, valid: false},
+		{name: "sum", schema: "(int) | (string)", source: `"one"`, valid: true},
+		{name: "sum mismatch", schema: "(int) | (string)", source: "false", valid: false},
+		{name: "never", schema: "(never)", source: "null", valid: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			schema := compile(t, katschema.NewCompiler(), tc.schema)
+			schema := compileText(t, katschema.NewCompiler(), tc.schema)
 			tree, root := parseAST(t, tc.source)
 			value, err := katschema.CompileAST(t.Context(), tree, root)
 			if err != nil {
@@ -256,36 +260,31 @@ func TestValidateASTMatchesCompiledLiterals(t *testing.T) {
 func TestValidateASTSchemaExpressions(t *testing.T) {
 	t.Parallel()
 
-	singleton := ks.Where(ks.Int(), ks.Binary(ks.X(), ks.Eq, ks.IntExpr(1)))
-
 	type testcase struct {
 		name   string
-		schema ks.Value
-		value  ks.Value
+		schema string
+		value  string
 		valid  bool
 	}
 
 	for _, tc := range []testcase{
-		{"singleton", ks.Any(), singleton, true},
-		{"nested singleton", ks.Any(), ks.Object(ks.Field("id", singleton)), true},
-		{"typed nested singleton", ks.Object(ks.Field("id", ks.Int())), ks.Object(ks.Field("id", singleton)), true},
-		{"optional singleton", ks.Any(), ks.Object(ks.Field("id", ks.Optional(singleton))), false},
-		{"typed optional singleton", ks.Object(ks.Field("id", ks.Optional(ks.Int()))), ks.Object(ks.Field("id", ks.Optional(singleton))), false},
-		{"nested schema", ks.Any(), ks.Object(ks.Field("id", ks.Int())), false},
-		{"nested never", ks.Any(), ks.Object(ks.Field("id", ks.Never())), false},
-		{"list schema", ks.Any(), ks.List(ks.Int()), false},
-		{"singleton list schema", ks.Any(), ks.List(singleton), false},
-		{"nested singleton list schema", ks.Any(), ks.List(ks.Object(ks.Field("id", singleton))), false},
-		{name: "sum singleton list schema", schema: ks.Any(), value: ks.List(ks.Sum(singleton, singleton)), valid: false},
+		{name: "singleton", schema: "(any)", value: "(int, x == 1)", valid: true},
+		{name: "nested singleton", schema: "(any)", value: `{"id": (int, x == 1)}`, valid: true},
+		{name: "typed nested singleton", schema: `{"id": (int)}`, value: `{"id": (int, x == 1)}`, valid: true},
+		{name: "optional singleton", schema: "(any)", value: `{"id": (int, x == 1, optional)}`, valid: false},
+		{name: "typed optional singleton", schema: `{"id": (int, optional)}`, value: `{"id": (int, x == 1, optional)}`, valid: false},
+		{name: "nested schema", schema: "(any)", value: `{"id": (int)}`, valid: false},
+		{name: "nested never", schema: "(any)", value: `{"id": (never)}`, valid: false},
+		{name: "list schema", schema: "(any)", value: "[(int)]", valid: false},
+		{name: "singleton list schema", schema: "(any)", value: "[(int, x == 1)]", valid: false},
+		{name: "nested singleton list schema", schema: "(any)", value: `[{"id": (int, x == 1)}]`, valid: false},
+		{name: "sum singleton list schema", schema: "(any)", value: "[(int, x == 1) | (int, x == 1)]", valid: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			schema := compile(t, katschema.NewCompiler(), tc.schema)
-			tree, root, err := ks.Build(tc.value)
-			if err != nil {
-				t.Fatal(err)
-			}
+			schema := compileText(t, katschema.NewCompiler(), tc.schema)
+			tree, root := parseAST(t, tc.value)
 			value, err := katschema.CompileAST(t.Context(), tree, root)
 			if err != nil {
 				t.Fatal(err)

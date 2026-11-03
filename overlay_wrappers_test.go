@@ -22,11 +22,7 @@ func TestOverlayPreservesEntityWrappers(t *testing.T) {
 	t.Parallel()
 
 	pks := ks.Attr("pks", ks.ListExpr(ks.LitString("id")))
-	listSchema := ks.With(
-		ks.List(ks.Type("record")),
-		ks.Check(ks.Binary(ks.Funcall("len", ks.X()), ks.Le, ks.IntExpr(2))),
-		ks.Attr("scope", ks.StrExpr("core")),
-	)
+	const listSchema = `([(record)], len(x) <= 2, scope="core")`
 	recordCompiler := func(custom ks.Value) *katschema.Compiler {
 		return katschema.NewCompilerWithResolver(katschema.ResolverFunc(
 			func(_ context.Context, name string) (katschema.TypeResolution, error) {
@@ -45,16 +41,14 @@ func TestOverlayPreservesEntityWrappers(t *testing.T) {
 	}
 	originalFields := ks.Object(ks.Field("legacy", ks.Optional(ks.String())))
 	dynamicFields := ks.Object(ks.Field("priority", ks.Optional(ks.Int())))
-	core := compile(t, recordCompiler(originalFields), listSchema)
+	core := compileText(t, recordCompiler(originalFields), listSchema)
 	coreFingerprint := core.Fingerprint()
-	top := compile(t, katschema.NewCompiler(), ks.Object(
-		ks.Field("custom_fields", ks.Optional(dynamicFields)),
-	))
+	top := compileText(t, katschema.NewCompiler(), `{"custom_fields": ({"priority": (int, optional)}, optional)}`)
 	got, err := katschema.Overlay(core, top)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := compile(t, recordCompiler(dynamicFields), listSchema)
+	want := compileText(t, recordCompiler(dynamicFields), listSchema)
 	if got.Kind() != katschema.Refined {
 		t.Fatalf("root kind = %s, want refined list", got.Kind())
 	}
@@ -132,7 +126,7 @@ func TestOverlayPreservesEntityWrappers(t *testing.T) {
 			}
 		})
 	}
-	empty := compile(t, katschema.NewCompiler(), ks.Object())
+	empty := compileText(t, katschema.NewCompiler(), "{}")
 	repeated, err := katschema.Overlay(got, empty)
 	if err != nil || repeated.Fingerprint() != got.Fingerprint() {
 		t.Fatalf("empty repeated overlay changed wrapped definition: %v", err)
@@ -159,7 +153,7 @@ func TestFingerprintIndependentOfCompilationOrder(t *testing.T) {
 	if !a.Equivalent(b) || a.Fingerprint() != b.Fingerprint() || a.SemanticFingerprint() != b.SemanticFingerprint() {
 		t.Fatal("field/union compilation order changed identity")
 	}
-	empty := compile(t, katschema.NewCompiler(), ks.Object())
+	empty := compileText(t, katschema.NewCompiler(), "{}")
 	overlay, err := katschema.Overlay(a, empty)
 	if err != nil {
 		t.Fatal(err)
@@ -167,10 +161,7 @@ func TestFingerprintIndependentOfCompilationOrder(t *testing.T) {
 	if overlay.Fingerprint() != a.Fingerprint() || overlay.SemanticFingerprint() != a.SemanticFingerprint() {
 		t.Fatal("empty overlay changed fingerprints")
 	}
-	base := compile(t, katschema.NewCompiler(), ks.Object(
-		ks.Field("anchor", ks.LitString("b")),
-		ks.Field("tag", ks.With(ks.String(), ks.Attr("owner", ks.StrExpr("core")))),
-	))
+	base := compileText(t, katschema.NewCompiler(), `{"anchor": "b", "tag": (string, owner="core")}`)
 	top := compile(t, katschema.NewCompiler(), ks.Object(ks.Field("choice", choice)))
 	layered, err := katschema.Overlay(base, top)
 	if err != nil || layered.Fingerprint() != a.Fingerprint() {
@@ -180,11 +171,8 @@ func TestFingerprintIndependentOfCompilationOrder(t *testing.T) {
 
 func TestOverlayKeepsObjectConstraints(t *testing.T) {
 	t.Parallel()
-	core := compile(t, katschema.NewCompiler(), ks.With(
-		ks.Object(ks.Field("id", ks.String())),
-		ks.Check(ks.Binary(ks.Funcall("len", ks.X()), ks.Le, ks.IntExpr(1))),
-	))
-	top := compile(t, katschema.NewCompiler(), ks.Object(ks.Field("new", ks.Optional(ks.Int()))))
+	core := compileText(t, katschema.NewCompiler(), `({"id": (string)}, len(x) <= 1)`)
+	top := compileText(t, katschema.NewCompiler(), `{"new": (int, optional)}`)
 	got, err := katschema.Overlay(core, top)
 	if err != nil {
 		t.Fatal(err)
@@ -199,14 +187,8 @@ func TestOverlayKeepsObjectConstraints(t *testing.T) {
 
 func TestOverlayPatchWrapperPolicy(t *testing.T) {
 	t.Parallel()
-	core := compile(t, katschema.NewCompiler(), ks.List(ks.With(
-		ks.Object(ks.Field("id", ks.String())),
-		ks.Attr("owner", ks.StrExpr("core")),
-	)))
-	top := compile(t, katschema.NewCompiler(), ks.List(ks.With(
-		ks.Object(ks.Field("new", ks.Optional(ks.Int()))),
-		ks.Attr("owner", ks.StrExpr("patch")),
-	)))
+	core := compileText(t, katschema.NewCompiler(), `[({"id": (string)}, owner="core")]`)
+	top := compileText(t, katschema.NewCompiler(), `[({"new": (int, optional)}, owner="patch")]`)
 	got, err := katschema.Overlay(core, top)
 	if err != nil {
 		t.Fatal(err)
@@ -215,10 +197,7 @@ func TestOverlayPatchWrapperPolicy(t *testing.T) {
 	if owner, ok := element.Metadata().Get("owner"); !ok || owner != "core" {
 		t.Fatalf("patch root annotations replaced core configuration: %v, found=%v", owner, ok)
 	}
-	constrained := compile(t, katschema.NewCompiler(), ks.With(
-		ks.Object(ks.Field("new", ks.Optional(ks.Int()))),
-		ks.Check(ks.Binary(ks.Funcall("len", ks.X()), ks.Le, ks.IntExpr(1))),
-	))
+	constrained := compileText(t, katschema.NewCompiler(), `({"new": (int, optional)}, len(x) <= 1)`)
 	if _, err := katschema.Overlay(core, constrained); err == nil {
 		t.Fatal("constrained patch root was silently discarded")
 	}
@@ -239,9 +218,7 @@ func TestOverlayAtPreservesAncestors(t *testing.T) {
 		ks.Field("old", ks.Optional(ks.String())),
 	)))
 	dynamic := ks.Object(ks.Field("priority", ks.Optional(ks.Int())))
-	patch := compile(t, katschema.NewCompiler(), ks.Object(
-		ks.Field("custom_fields", ks.Optional(dynamic)),
-	))
+	patch := compileText(t, katschema.NewCompiler(), `{"custom_fields": ({"priority": (int, optional)}, optional)}`)
 	got, err := katschema.OverlayAt(core, katschema.Path{"children"}, patch)
 	if err != nil {
 		t.Fatal(err)
@@ -267,10 +244,11 @@ func TestOverlayAtPreservesAncestors(t *testing.T) {
 	if _, ok := core.Traverse(katschema.Path{"children", "custom_fields", "old"}); !ok {
 		t.Fatal("nested overlay mutated the source")
 	}
-	for _, tc := range []struct {
+	type testcase struct {
 		value ks.Value
 		valid bool
-	}{
+	}
+	for _, tc := range []testcase{
 		{
 			value: ks.List(ks.Object(ks.Field("id", ks.LitString("parent")), ks.Field("children", ks.List(ks.Object(
 				ks.Field("id", ks.LitInt(1)),
