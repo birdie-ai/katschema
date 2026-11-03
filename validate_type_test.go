@@ -11,30 +11,28 @@ import (
 func TestValidateType(t *testing.T) {
 	t.Parallel()
 
-	nonempty := ks.Where(ks.String(), ks.Binary(ks.Funcall("len", ks.X()), ks.Gt, ks.IntExpr(0)))
-	tags := ks.Where(ks.List(ks.String()), ks.Binary(ks.Funcall("len", ks.X()), ks.Le, ks.IntExpr(2)))
-	schema := compile(t, katschema.NewCompiler(), ks.Object(
-		ks.Field("id", nonempty),
-		ks.Field("tags", ks.Optional(tags)),
-	))
+	schema := compileText(t, katschema.NewCompiler(), `{
+		"id": (string, len(x) > 0),
+		"tags": ([(string)], len(x) <= 2, optional)
+	}`)
 	type testcase struct {
 		name  string
-		value ks.Value
+		value string
 		valid bool
 	}
 	for _, tc := range []testcase{
-		{"optional omitted", ks.Object(ks.Field("id", ks.LitString("one"))), true},
-		{"empty array", ks.Object(ks.Field("id", ks.LitString("one")), ks.Field("tags", ks.List())), true},
-		{"array at limit", ks.Object(ks.Field("id", ks.LitString("one")), ks.Field("tags", ks.List(ks.LitString("a"), ks.LitString("b")))), true},
-		{"array over limit", ks.Object(ks.Field("id", ks.LitString("one")), ks.Field("tags", ks.List(ks.LitString("a"), ks.LitString("b"), ks.LitString("c")))), false},
-		{"wrong element", ks.Object(ks.Field("id", ks.LitString("one")), ks.Field("tags", ks.List(ks.LitInt(1)))), false},
-		{"empty id", ks.Object(ks.Field("id", ks.LitString(""))), false},
-		{"missing id", ks.Object(), false},
-		{"unknown field", ks.Object(ks.Field("id", ks.LitString("one")), ks.Field("internal", ks.LitInt(1))), false},
+		{name: "optional omitted", value: `{"id": "one"}`, valid: true},
+		{name: "empty array", value: `{"id": "one", "tags": []}`, valid: true},
+		{name: "array at limit", value: `{"id": "one", "tags": ["a", "b"]}`, valid: true},
+		{name: "array over limit", value: `{"id": "one", "tags": ["a", "b", "c"]}`, valid: false},
+		{name: "wrong element", value: `{"id": "one", "tags": [1]}`, valid: false},
+		{name: "empty id", value: `{"id": ""}`, valid: false},
+		{name: "missing id", value: "{}", valid: false},
+		{name: "unknown field", value: `{"id": "one", "internal": 1}`, valid: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			value := compile(t, katschema.NewCompiler(), tc.value)
+			value := compileText(t, katschema.NewCompiler(), tc.value)
 			err := schema.ValidateType(value)
 			if (err == nil) != tc.valid {
 				t.Fatalf("ValidateType = %v, want valid=%v", err, tc.valid)
@@ -50,22 +48,22 @@ func TestValidateTypeRequiresLiteral(t *testing.T) {
 	t.Parallel()
 
 	cc := katschema.NewCompiler()
-	anyType := compile(t, cc, ks.Any())
+	anyType := compileText(t, cc, "(any)")
 	type testcase struct {
 		name  string
 		value katschema.Type
 	}
 	for _, tc := range []testcase{
-		{"zero", katschema.Type{}},
-		{"any", anyType},
-		{"never", compile(t, cc, ks.Never())},
-		{"int", compile(t, cc, ks.Int())},
-		{"range", compile(t, cc, ks.Where(ks.Int(), ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0))))},
-		{"sum", compile(t, cc, ks.Sum(ks.LitInt(1), ks.LitInt(2)))},
-		{"list schema", compile(t, cc, ks.List(ks.Int()))},
-		{"object schema", compile(t, cc, ks.Object(ks.Field("id", ks.String())))},
-		{"optional field", compile(t, cc, ks.Object(ks.Field("id", ks.Optional(ks.Where(ks.Int(), ks.Binary(ks.X(), ks.Eq, ks.IntExpr(1)))))))},
-		{"nested schema", compile(t, cc, ks.Object(ks.Field("data", ks.Object(ks.Field("value", ks.Any())))))},
+		{name: "zero", value: katschema.Type{}},
+		{name: "any", value: anyType},
+		{name: "never", value: compileText(t, cc, "(never)")},
+		{name: "int", value: compileText(t, cc, "(int)")},
+		{name: "range", value: compileText(t, cc, "(int, x > 0)")},
+		{name: "sum", value: compile(t, cc, ks.Sum(ks.LitInt(1), ks.LitInt(2)))},
+		{name: "list schema", value: compileText(t, cc, "[(int)]")},
+		{name: "object schema", value: compileText(t, cc, `{"id": (string)}`)},
+		{name: "optional field", value: compileText(t, cc, `{"id": (int, x == 1, optional)}`)},
+		{name: "nested schema", value: compileText(t, cc, `{"data": {"value": (any)}}`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := anyType.ValidateType(tc.value); !errors.Is(err, katschema.ErrValidation) {
@@ -73,7 +71,7 @@ func TestValidateTypeRequiresLiteral(t *testing.T) {
 			}
 		})
 	}
-	value := compile(t, cc, ks.LitInt(1))
+	value := compileText(t, cc, "1")
 	if err := (katschema.Type{}).ValidateType(value); !errors.Is(err, katschema.ErrValidation) {
 		t.Fatalf("zero schema ValidateType = %v, want ErrValidation", err)
 	}
@@ -82,18 +80,14 @@ func TestValidateTypeRequiresLiteral(t *testing.T) {
 func TestValidateTypeOverlays(t *testing.T) {
 	t.Parallel()
 
-	input := compile(t, katschema.NewCompiler(), ks.With(ks.Object(
-		ks.Field("id", ks.String()),
-	), ks.Flag("entity")))
-	internal := compile(t, katschema.NewCompiler(), ks.Object(ks.Field("updated_at", ks.Int())))
+	input := compileText(t, katschema.NewCompiler(), `({"id": (string)}, entity)`)
+	internal := compileText(t, katschema.NewCompiler(), `{"updated_at": (int)}`)
 	schema, err := katschema.Overlay(input, internal)
 	if err != nil {
 		t.Fatal(err)
 	}
-	public := compile(t, katschema.NewCompiler(), ks.With(ks.Object(
-		ks.Field("id", ks.LitString("one")),
-	), ks.Flag("source")))
-	generated := compile(t, katschema.NewCompiler(), ks.Object(ks.Field("updated_at", ks.LitInt(10))))
+	public := compileText(t, katschema.NewCompiler(), `({"id": "one"}, source)`)
+	generated := compileText(t, katschema.NewCompiler(), `{"updated_at": 10}`)
 	value, err := katschema.Overlay(public, generated)
 	if err != nil {
 		t.Fatal(err)
@@ -116,14 +110,12 @@ func TestValidateTypeValueConstraints(t *testing.T) {
 	t.Parallel()
 
 	cc := katschema.NewCompiler()
-	schema := compile(t, cc, ks.Any())
-	value := compile(t, cc, ks.Where(ks.Object(ks.Field("id", ks.LitInt(1))),
-		ks.Binary(ks.Funcall("len", ks.X()), ks.Le, ks.IntExpr(1)),
-	))
+	schema := compileText(t, cc, "(any)")
+	value := compileText(t, cc, `({"id": 1}, len(x) <= 1)`)
 	if err := schema.ValidateType(value); err != nil {
 		t.Fatal(err)
 	}
-	top := compile(t, katschema.NewCompiler(), ks.Object(ks.Field("extra", ks.LitInt(2))))
+	top := compileText(t, katschema.NewCompiler(), `{"extra": 2}`)
 	invalid, err := katschema.Overlay(value, top)
 	if err != nil {
 		t.Fatal(err)

@@ -10,10 +10,12 @@ import (
 
 func TestTraverseRetainsSourceTypes(t *testing.T) {
 	t.Parallel()
-	core := compile(t, katschema.NewCompiler(), ks.With(ks.List(ks.With(ks.Object(
-		ks.Field("id", ks.With(ks.String(), ks.Flag("pk"))),
-		ks.Field("custom_fields", ks.Optional(ks.Object(ks.Field("legacy", ks.String())))),
-	), ks.Attr("owner", ks.StrExpr("core")))), ks.Attr("collection", ks.BoolExpr(true))))
+	core := compileText(t, katschema.NewCompiler(), `([
+		({
+			"id": (string, pk),
+			"custom_fields": ({"legacy": (string)}, optional)
+		}, owner="core")
+	], collection=true)`)
 	request := katschema.NewCompilerWithResolver(katschema.ResolverFunc(
 		func(_ context.Context, name string) (katschema.TypeResolution, error) {
 			if name != "timestamp" {
@@ -22,14 +24,13 @@ func TestTraverseRetainsSourceTypes(t *testing.T) {
 			return katschema.TypeResolution{Name: "timestamp", Value: ks.String()}, nil
 		},
 	))
-	patch := compile(t, request, ks.Object(ks.Field("custom_fields", ks.Optional(ks.Object(
-		ks.Field("priority", ks.With(ks.Int(), ks.Check(ks.Binary(ks.X(), ks.Gt, ks.IntExpr(0))),
-			ks.Attr("mapping", ks.StrExpr("numbers")))),
-		ks.Field("timestamp", ks.Type("timestamp")),
-		ks.Field("tags", ks.List(ks.With(ks.Object(
-			ks.Field("name", ks.String()),
-		), ks.Attr("owner", ks.StrExpr("request"))))),
-	)))))
+	patch := compileText(t, request, `{
+		"custom_fields": ({
+			"priority": (int, x > 0, mapping="numbers"),
+			"timestamp": (timestamp),
+			"tags": [({"name": (string)}, owner="request")]
+		}, optional)
+	}`)
 	overlay, err := katschema.Overlay(core, patch)
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +104,7 @@ func TestTraverseRetainsSourceTypes(t *testing.T) {
 	if mapping, _ := priority.Metadata().Get("mapping"); mapping != "numbers" {
 		t.Fatal("traversal lost field type metadata")
 	}
-	newPatch := compile(t, katschema.NewCompiler(), ks.Object(ks.Field("priority", ks.String())))
+	newPatch := compileText(t, katschema.NewCompiler(), `{"priority": (string)}`)
 	updated, err := katschema.OverlayAt(overlay, katschema.Path{"custom_fields"}, newPatch)
 	if err != nil {
 		t.Fatal(err)
