@@ -94,7 +94,15 @@ func (p *printer) node(id NodeID) {
 		}
 
 	case Constraint:
-		p.node(p.t.Constraint(id))
+		expr := p.t.Constraint(id)
+		parens := p.t.Node(expr).Kind() == Ident
+		if parens {
+			p.write("(")
+		}
+		p.node(expr)
+		if parens {
+			p.write(")")
+		}
 
 	case Attr:
 		a := p.t.Attr(id)
@@ -119,28 +127,8 @@ func (p *printer) node(id NodeID) {
 		}
 		p.write(")")
 
-	case Unary:
-		u := p.t.Unary(id)
-		if !u.Op.IsUnary() {
-			p.failf("invalid unary operator %q", u.Op.String())
-			return
-		}
-		p.write(u.Op.String())
-		p.node(u.X)
-
-	case Binary:
-		b := p.t.Binary(id)
-		if !b.Op.IsBinary() {
-			p.failf("invalid binary operator %q", b.Op.String())
-			return
-		}
-		p.node(b.Left)
-		if b.Op == token.In {
-			p.write(" in ")
-		} else {
-			p.write(b.Op.String())
-		}
-		p.node(b.Right)
+	case Unary, Binary:
+		p.expr(id, 0)
 
 	case Group:
 		p.write("(")
@@ -149,6 +137,57 @@ func (p *printer) node(id NodeID) {
 
 	default:
 		p.failf("invalid node %d", id)
+	}
+}
+
+func (p *printer) expr(id NodeID, minPrec int) {
+	if p.err != nil {
+		return
+	}
+	switch p.t.Node(id).Kind() {
+	case Unary:
+		u := p.t.Unary(id)
+		if !u.Op.IsUnary() {
+			p.failf("invalid unary operator %q", u.Op.String())
+			return
+		}
+		p.write(u.Op.String())
+		kind := p.t.Node(u.X).Kind()
+		if u.Op == token.Sub && (kind == Int || kind == Decimal) {
+			p.write("(")
+			p.node(u.X)
+			p.write(")")
+		} else {
+			p.expr(u.X, 7)
+		}
+	case Binary:
+		b := p.t.Binary(id)
+		prec := b.Op.Precedence()
+		if prec == 0 {
+			p.failf("invalid binary operator %q", b.Op.String())
+			return
+		}
+		parens := prec < minPrec
+		if parens {
+			p.write("(")
+		}
+		leftPrec := prec
+		switch b.Op {
+		case token.Eq, token.Ne, token.In, token.Match:
+			leftPrec++
+		}
+		p.expr(b.Left, leftPrec)
+		if b.Op == token.In {
+			p.write(" in ")
+		} else {
+			p.write(b.Op.String())
+		}
+		p.expr(b.Right, prec+1)
+		if parens {
+			p.write(")")
+		}
+	default:
+		p.node(id)
 	}
 }
 

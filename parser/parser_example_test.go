@@ -16,13 +16,13 @@ func ExampleParse() {
 		"enabled": true,
 		"owner": ({
 			"id": (string | int, pk),
-			"name": (string),
+			"name": (string, 1 <= len(x) <= 100),
 			"email": (string, optional),
 		}),
 		"endpoints": ([{
 			"path": (string),
 			"methods": [(string)],
-			"timeout": (real, unit="seconds") | (string, format="duration"),
+			"timeout": (real, unit="seconds", x > 0) | (string, format="duration", len(x) > 0),
 		}]),
 		"defaults": {
 			"retries": 3,
@@ -39,6 +39,6 @@ func ExampleParse() {
 	}
 	fmt.Printf("\nComments: %d\n", len(tree.Comments()))
 	// Output:
-	// {"service":"catalog","version":2,"enabled":true,"owner":({"id":(string|int,pk),"name":(string),"email":(string,optional)}),"endpoints":([{"path":(string),"methods":[(string)],"timeout":(real,unit="seconds")|(string,format="duration")}]),"defaults":{"retries":3,"timeout":2.5e+1,"fallback":null}}
+	// {"service":"catalog","version":2,"enabled":true,"owner":({"id":(string|int,pk),"name":(string,1<=len(x)<=100),"email":(string,optional)}),"endpoints":([{"path":(string),"methods":[(string)],"timeout":(real,unit="seconds",x>0)|(string,format="duration",len(x)>0)}]),"defaults":{"retries":3,"timeout":2.5e+1,"fallback":null}}
 	// Comments: 1
 }

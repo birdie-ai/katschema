@@ -28,6 +28,9 @@ func parseBenchmarkInputs() []testcase {
 		{name: "Schema/metadata_many", src: `(string,` + strings.Repeat(`label="Name",`, 128) + `)`},
 		{name: "Sum/whole_metadata", src: `{"value":(string|int,optional,label="Value")}`},
 		{name: "Sum/branch_metadata", src: `{"value":(string,label="Text")|(int,label="Number")}`},
+		{name: "Constraint/range", src: `(int,-100<=x<=100)`},
+		{name: "Constraint/mixed", src: `{"name":(string,optional,label="Name",1<=len(x)<=100),"value":(string,len(x)>0)|(int,x>0)}`},
+		{name: "Constraint/calls", src: `(int,pkg.check(len(x),other(x+1),ready(),)>0)`},
 		{name: "Comments/long", src: "/*" + strings.Repeat(" a comment line\n", 8192) + "*/null"},
 		{name: "Comments/many", src: "[" + strings.Repeat("/* item */1,// line\n", 4095) + "/* last */1]"},
 	}
@@ -56,6 +59,18 @@ func parseBenchmarkInputs() []testcase {
 			testcase{name: fmt.Sprintf("Sum/inner_%d", count), src: "(" + strings.Repeat("int|", count-1) + "string)"},
 			testcase{name: fmt.Sprintf("Sum/outer_%d", count), src: strings.Repeat("(int)|", count-1) + "(string)"},
 		)
+	}
+	for _, count := range []int{16, 128, 1024} {
+		inputs = append(inputs,
+			testcase{name: fmt.Sprintf("Constraint/arithmetic_%d", count), src: "(int,x" + strings.Repeat("+1", count) + ">0)"},
+			testcase{name: fmt.Sprintf("Constraint/logical_%d", count), src: "(int," + strings.Repeat("x>0&&", count-1) + "x<100)"},
+		)
+	}
+	for _, depth := range []int{16, 128} {
+		inputs = append(inputs, testcase{
+			name: fmt.Sprintf("Constraint/groups_%d", depth),
+			src:  "(int," + strings.Repeat("(", depth) + "x>0" + strings.Repeat(")", depth) + ")",
+		})
 	}
 	return inputs
 }

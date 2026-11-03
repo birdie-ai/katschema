@@ -3,11 +3,14 @@ package parser
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/birdie-ai/katschema/internal/compiled"
 	"github.com/birdie-ai/katschema/ks"
 	"github.com/birdie-ai/katschema/parser/ast"
+	"github.com/birdie-ai/katschema/parser/token"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -330,6 +333,61 @@ func TestParseClauses(t *testing.T) {
 			}
 			checkParsePrint(t, tree, root)
 		})
+	}
+}
+
+func TestParseSchemaFixtures(t *testing.T) {
+	t.Parallel()
+	type testcase struct {
+		name string
+	}
+	cases := []testcase{
+		{name: "arith.ks"},
+		{name: "complex-logical.ks"},
+		{name: "enum.ks"},
+		{name: "feedback.ks"},
+		{name: "float.ks"},
+		{name: "funcall.ks"},
+		{name: "list.ks"},
+		{name: "marketplace.ks"},
+		{name: "null.ks"},
+		{name: "object.ks"},
+		{name: "string.ks"},
+		{name: "sum.ks"},
+		{name: "tuple.ks"},
+	}
+	paths, err := filepath.Glob("../grammar/examples/*.ks")
+	if err != nil || len(paths) != len(cases) {
+		t.Fatalf("schema fixtures: count = %d, want %d, error = %v", len(paths), len(cases), err)
+	}
+	seen := make(map[string]bool)
+	for _, tc := range cases {
+		if seen[tc.name] {
+			t.Fatalf("fixture %q classified twice", tc.name)
+		}
+		seen[tc.name] = true
+		t.Run(tc.name, func(t *testing.T) {
+			src, err := os.ReadFile(filepath.Join("../grammar/examples", tc.name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.name != "object.ks" && tc.name != "tuple.ks" {
+				tree, root := parseOK(t, string(src))
+				checkParsePrint(t, tree, root)
+			} else {
+				parseFailure(t, string(src))
+			}
+		})
+	}
+}
+
+func checkSpanText(t testing.TB, src string, span token.Span, want string) {
+	t.Helper()
+	if !span.Valid() || span.End.Offset() > len(src) {
+		t.Fatalf("invalid span %v for %d bytes", span, len(src))
+	}
+	if got := src[span.Start.Offset():span.End.Offset()]; got != want {
+		t.Fatalf("source span %v = %q, want %q", span, got, want)
 	}
 }
 

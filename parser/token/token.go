@@ -169,10 +169,28 @@ func (k Kind) IsUnary() bool {
 }
 
 func (k Kind) IsBinary() bool {
+	return k.Precedence() != 0
+}
+
+// Precedence returns a binary operator's precedence, or zero for other tokens.
+// Examples:
+//
+//	1+2*3				means 1+(2*3)
+//	x+1 > 10 && flag	means ((x+1) > 10) && flag
+func (k Kind) Precedence() int {
 	switch k {
-	case Eq, Ne, Lt, Le, Gt, Ge, In, Match,
-		And, Or, Add, Sub, Mul, Div, Mod:
-		return true
+	case Or:
+		return 1
+	case And:
+		return 2
+	case Eq, Ne, In, Match:
+		return 3
+	case Lt, Le, Gt, Ge:
+		return 4
+	case Add, Sub:
+		return 5
+	case Mul, Div, Mod:
+		return 6
 	}
-	return false
+	return 0
 }
