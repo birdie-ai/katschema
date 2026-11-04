@@ -75,6 +75,31 @@ func TestFieldFingerprint(t *testing.T) {
 	}
 }
 
+func TestFieldSemanticFingerprint(t *testing.T) {
+	t.Parallel()
+
+	resolver := katschema.ResolverFunc(func(_ context.Context, name string) (katschema.TypeResolution, error) {
+		return katschema.TypeResolution{Name: name, Value: With(Int(), Flag("internal"))}, nil
+	})
+	annotated := compile(t, katschema.NewCompilerWithResolver(resolver), Object(
+		Field("alias", With(Type("identifier"), Flag("pk"))),
+	)).Fields()[0]
+	field := func(value ks.Value) katschema.Field {
+		t.Helper()
+		return compile(t, katschema.NewCompiler(), Object(Field("id", value))).Fields()[0]
+	}
+	required := field(Int()).SemanticFingerprint()
+	if required != annotated.SemanticFingerprint() {
+		t.Fatal("field and type names or metadata changed the semantic fingerprint")
+	}
+	if required == field(Optional(Int())).SemanticFingerprint() {
+		t.Fatal("optionality did not affect the semantic fingerprint")
+	}
+	if required == field(With(Int(), Check(Binary(X(), Gt, IntExpr(0))))).SemanticFingerprint() {
+		t.Fatal("value type constraint did not affect the semantic fingerprint")
+	}
+}
+
 func TestValidate(t *testing.T) {
 	t.Parallel()
 

@@ -2,15 +2,23 @@ package compiled
 
 import "slices"
 
+const fieldTag = 0xfd
+
 // FieldFingerprint hashes a field independently of its containing object.
 func FieldFingerprint(name string, typ Type, optional bool, metadata Metadata) uint64 {
-	const fieldTag = 0xfd
 	var buffer [128]byte
 	out := append(buffer[:0], encodingVersion, fieldTag)
 	out = putstr(out, name)
 	out = append(out, boolByte(optional))
 	out = putu64(out, typ.Fingerprint())
 	out = putu64(out, metadata.a.metadataFingerprint(metadata.id))
+	return sum64(out)
+}
+
+// FieldSemanticFingerprint hashes only optionality and the value type's semantics.
+func FieldSemanticFingerprint(typ Type, optional bool) uint64 {
+	buffer := [3 + 8]byte{encodingVersion, fieldTag, boolByte(optional)}
+	out := putu64(buffer[:3], typ.SemanticFingerprint())
 	return sum64(out)
 }
 
