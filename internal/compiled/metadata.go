@@ -170,6 +170,9 @@ func (a *Arena) value(id TypeID) (any, error) {
 		case BoolAtom:
 			return n.data != 0, nil
 		case IntAtom:
+			if n.data < 0 {
+				return a.bigInt(n.data), nil
+			}
 			return a.int64(n.data), nil
 		case RealAtom:
 			return a.realString(atom), nil

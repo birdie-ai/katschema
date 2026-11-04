@@ -16,6 +16,8 @@ func TestParseSums(t *testing.T) {
 	}
 	for _, tc := range []testcase{
 		{src: "(string | int)", want: "(string|int)"},
+		{src: "(int | #{1})", want: "(int|#{1})"},
+		{src: "(#{(int)}) | (string)", want: "(#{(int)})|(string)"},
 		{src: "(string) | (int)", want: "(string)|(int)"},
 		{src: "(string | int | bool)", want: "(string|int|bool)"},
 		{src: "(string) | (int) | (bool)", want: "(string)|(int)|(bool)"},
@@ -62,7 +64,6 @@ func TestParseSumErrors(t *testing.T) {
 		{src: "(int | string, label=)"},
 		{src: "((int))"},
 		{src: "((int) |)"},
-		{src: "(int | #{1})"},
 	} {
 		t.Run(tc.src, func(t *testing.T) {
 			parseFailure(t, tc.src)

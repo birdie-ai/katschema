@@ -80,7 +80,7 @@ const (
 
 	Pipe // |
 
-	TupleOpen // #{
+	LTuple // #{
 	Comment
 )
 
@@ -156,7 +156,7 @@ func (k Kind) String() string {
 		return "%"
 	case Pipe:
 		return "|"
-	case TupleOpen:
+	case LTuple:
 		return "#{"
 	case Comment:
 		return "comment"

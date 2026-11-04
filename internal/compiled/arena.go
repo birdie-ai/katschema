@@ -384,6 +384,13 @@ func (a *Arena) internTuple(elems []TypeID) TypeID {
 	a.scratch = append(a.scratch, encodingVersion, byte(Tuple))
 	a.scratch = put32(a.scratch, int32(len(elems)))
 	for _, id := range elems {
+		if a.baseKind(id) == Never {
+			// NOTE(i4k): For #{(anyType), (never)} there's nothing you can put in
+			// the second position, so it accepts the same set of values as (never).
+			// Alternatively, we can choose to fail in this case but it's valid syntactically
+			// and it can also show up as result of normalization of the elements.
+			return a.never
+		}
 		a.scratch = putu64(a.scratch, a.Fingerprint(id))
 	}
 	fp := a.hash(a.scratch)

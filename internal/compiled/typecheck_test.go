@@ -190,6 +190,29 @@ func TestTypeCheck(t *testing.T) {
 	}
 }
 
+func TestTypeCheckWrappedTuple(t *testing.T) {
+	t.Parallel()
+	a := NewArena()
+	value := a.withRefinedName(compileText(t, a, `(#{2}, source="device")`), "Reading")
+	want := a.withRefinedName(compileText(t, a, `(#{2.0}, source="device")`), "Reading")
+	for _, src := range []string{
+		"#{(real)}",
+		"(#{(real)}, measurement)",
+		"[(real)]",
+		"([(real)], len(x) > 0)",
+	} {
+		t.Run(src, func(t *testing.T) {
+			got, err := a.TypeCheck(compileText(t, a, src), value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Fatalf("TypeCheck = %d, want %d (real element with original name and metadata)", got, want)
+			}
+		})
+	}
+}
+
 func checkDecimal(t *testing.T, a *Arena, got TypeID, want string, wantKind Kind) {
 	atom, ok := a.Literal(got)
 	if !ok || a.Node(atom).Kind() != wantKind {

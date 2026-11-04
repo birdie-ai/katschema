@@ -36,6 +36,21 @@ func TestDSL(t *testing.T) {
 			want: `[]`,
 		},
 		{
+			name: "empty tuple",
+			root: Tuple(),
+			want: `#{}`,
+		},
+		{
+			name: "tuple schema",
+			root: With(Tuple(String(), Sum(Int(), Bool())), Attr("example", ValueExpr(Tuple(LitString("id"), LitInt(42))))),
+			want: `(#{(string),(int)|(bool)},example=#{"id",42})`,
+		},
+		{
+			name: "sum with tuple alternative",
+			root: Sum(Tuple(Int()), String()),
+			want: `(#{(int)})|(string)`,
+		},
+		{
 			name: "list",
 			root: List(LitNull(), LitBool(false)),
 			want: `[null,false]`,
@@ -132,6 +147,18 @@ func TestDSL(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestTupleSumBranch(t *testing.T) {
+	t.Parallel()
+	tree, root, err := Build(Sum(Tuple(Int()), String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := tree.Sum(root).Left
+	if tree.Node(branch).Kind() != ast.Schema || tree.Node(tree.Schema(branch).Type).Kind() != ast.Tuple {
+		t.Fatal("expected a parenthesized tuple branch")
 	}
 }
 

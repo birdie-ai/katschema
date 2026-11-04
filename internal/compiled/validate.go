@@ -76,24 +76,26 @@ func (typ Type) validAST(t *ast.Tree, value ast.NodeID, inList bool) bool {
 	case StringAtom:
 		return valueKind == ast.String && t.String(value) == a.StringValue(StringID(n.data))
 	case List:
-		if valueKind != ast.List {
+		elems, ok := astElements(t, value)
+		if !ok {
 			return false
 		}
 		element := a.Type(TypeID(n.data))
 		if typ.view != nil {
 			element = typ.view.child
 		}
-		for _, v := range t.List(value) {
+		for _, v := range elems {
 			if !element.validAST(t, v, true) {
 				return false
 			}
 		}
 		return true
 	case Tuple:
-		if valueKind != ast.List {
+		got, ok := astElements(t, value)
+		if !ok {
 			return false
 		}
-		want, got := a.tuple(typ.id), t.List(value)
+		want := a.tuple(typ.id)
 		if len(want) != len(got) {
 			return false
 		}
@@ -124,6 +126,17 @@ func (typ Type) validAST(t *ast.Tree, value ast.NodeID, inList bool) bool {
 	}
 }
 
+func astElements(t *ast.Tree, id ast.NodeID) ([]ast.NodeID, bool) {
+	switch t.Node(id).Kind() {
+	case ast.List:
+		return t.List(id), true
+	case ast.Tuple:
+		return t.Tuple(id), true
+	default:
+		return nil, false
+	}
+}
+
 func (typ Type) validAny(t *ast.Tree, value ast.NodeID, inList bool) bool {
 	switch t.Node(value).Kind() {
 	case ast.Null, ast.Bool, ast.String:
@@ -132,8 +145,9 @@ func (typ Type) validAny(t *ast.Tree, value ast.NodeID, inList bool) bool {
 		return astInt(t, value)
 	case ast.Decimal:
 		return astReal(t, value)
-	case ast.List:
-		for _, child := range t.List(value) {
+	case ast.List, ast.Tuple:
+		elems, _ := astElements(t, value)
+		for _, child := range elems {
 			if !typ.validAST(t, child, true) {
 				return false
 			}
@@ -254,8 +268,9 @@ func (a *Arena) validConstraint(id ConstraintID, t *ast.Tree, value ast.NodeID) 
 		switch t.Node(value).Kind() {
 		case ast.String:
 			l = int64(utf8.RuneCountInString(t.String(value)))
-		case ast.List:
-			l = int64(len(t.List(value)))
+		case ast.List, ast.Tuple:
+			elems, _ := astElements(t, value)
+			l = int64(len(elems))
 		case ast.Object:
 			l = int64(len(t.Object(value)))
 		default:

@@ -5,7 +5,29 @@ import (
 	"testing"
 
 	"github.com/birdie-ai/katschema"
+	"github.com/birdie-ai/katschema/ks"
 )
+
+func TestTupleSchema(t *testing.T) {
+	t.Parallel()
+	cc := katschema.NewCompiler()
+	row := compileText(t, cc, "#{(string), (int)}")
+	if want := compile(t, cc, ks.Tuple(ks.String(), ks.Int())); row != want {
+		t.Fatal("text and DSL compiled to different tuple types")
+	}
+	choice := compile(t, cc, ks.Sum(ks.Tuple(ks.Int()), ks.String()))
+	if choice != compileText(t, cc, "(#{(int)}) | (string)") {
+		t.Fatal("text and DSL compiled to different sums")
+	}
+	value := ks.Tuple(ks.LitString("row"), ks.LitInt(42))
+	if err := row.Validate(value); err != nil {
+		t.Fatal(err)
+	}
+	literal := compile(t, cc, value)
+	if b, err := literal.MarshalJSON(); err != nil || string(b) != `["row",42]` {
+		t.Fatalf("MarshalJSON = %s, %v", b, err)
+	}
+}
 
 func TestTupleAccess(t *testing.T) {
 	t.Parallel()

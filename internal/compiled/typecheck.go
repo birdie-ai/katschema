@@ -44,7 +44,16 @@ func (a *Arena) typeCheck(schema, value TypeID) TypeID {
 	}
 
 	sn, vn := a.Node(schema), a.Node(value)
+	if vn.kind == Refined && a.baseKind(value) == Tuple {
+		r := a.refinements[vn.data]
+		base := a.typeCheck(schema, r.base)
+		return a.internRefinedNamed(base, r.constraint, r.metadata, r.name)
+	}
 	switch sn.kind {
+	case Refined:
+		if vn.kind == Tuple {
+			return a.typeCheck(a.refinements[sn.data].base, value)
+		}
 	case List:
 		elemSchema := TypeID(sn.data)
 		switch vn.kind {

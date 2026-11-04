@@ -67,3 +67,26 @@ func BenchmarkValidateObject(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkValidateTuple(b *testing.B) {
+	a := NewArena()
+	typ := compileText(b, a, "#{(string, len(x) > 0), (int, x >= 0)}")
+	type testcase struct {
+		name string
+		src  string
+	}
+	for _, tc := range []testcase{
+		{name: "array", src: `["row",42]`},
+		{name: "tuple", src: `#{"row",42}`},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			tree, root := parseText(b, tc.src)
+			b.ReportAllocs()
+			for b.Loop() {
+				if !a.Valid(typ, tree, root) {
+					b.Fatal("invalid tuple fixture")
+				}
+			}
+		})
+	}
+}

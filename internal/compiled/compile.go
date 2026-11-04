@@ -92,6 +92,9 @@ func (c *compiler) value(id ast.NodeID, field bool) (TypeID, bool, error) {
 	case ast.List:
 		t, err := c.list(id)
 		return t, false, err
+	case ast.Tuple:
+		t, err := c.tuple(c.t.Tuple(id))
+		return t, false, err
 	case ast.Object:
 		t, err := c.object(id)
 		return t, false, err
@@ -185,7 +188,10 @@ func (c *compiler) list(id ast.NodeID) (TypeID, error) {
 			return 0, c.errorf(id, "array schemas must contain exactly one element schema")
 		}
 	}
+	return c.tuple(elems)
+}
 
+func (c *compiler) tuple(elems []ast.NodeID) (TypeID, error) {
 	out := make([]TypeID, len(elems))
 	for i, elem := range elems {
 		t, optional, err := c.value(elem, false)
@@ -204,8 +210,9 @@ func (c *compiler) hasSchemaSyntax(id ast.NodeID) bool {
 	switch c.t.Node(id).Kind() {
 	case ast.Schema, ast.Sum:
 		return true
-	case ast.List:
-		for _, x := range c.t.List(id) {
+	case ast.List, ast.Tuple:
+		elems, _ := astElements(c.t, id)
+		for _, x := range elems {
 			if c.hasSchemaSyntax(x) {
 				return true
 			}
@@ -271,7 +278,7 @@ func (c *compiler) sumMember(id ast.NodeID, typePosition bool) (TypeID, error) {
 		return c.sum(id, typePosition)
 	case ast.Name, ast.Path:
 		return c.typeRef(id)
-	case ast.List, ast.Object:
+	case ast.List, ast.Tuple, ast.Object:
 		if typePosition {
 			return c.typeRef(id)
 		}
@@ -504,6 +511,8 @@ func (c *compiler) typeRef(id ast.NodeID) (TypeID, error) {
 			return 0, c.error(elems[0], ErrOptionalUnexpected)
 		}
 		return c.a.internList(elem), nil
+	case ast.Tuple:
+		return c.tuple(c.t.Tuple(id))
 	case ast.Object:
 		return c.object(id)
 	case ast.Sum:
