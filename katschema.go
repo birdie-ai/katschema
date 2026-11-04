@@ -206,6 +206,17 @@ func wrapField(field compiled.FieldView) Field {
 // Metadata returns attributes attached directly to this field.
 func (f Field) Metadata() Metadata { return f.metadata }
 
+// Fingerprint hashes the field's name, optionality, value type definition, and metadata.
+func (f Field) Fingerprint() uint64 {
+	return compiled.FieldFingerprint(f.Name, f.Type.ref, f.Optional, f.metadata)
+}
+
+// SemanticFingerprint hashes Optional and the value type's semantic fingerprint.
+// It ignores the field's name and metadata.
+func (f Field) SemanticFingerprint() uint64 {
+	return compiled.FieldSemanticFingerprint(f.Type.ref, f.Optional)
+}
+
 // Variants returns the members of a sum type.
 func (t Type) Variants() []Type {
 	refs := t.ref.Variants()
