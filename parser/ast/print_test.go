@@ -3,6 +3,8 @@ package ast
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"testing"
 
 	"github.com/birdie-ai/katschema/parser/token"
@@ -313,6 +315,33 @@ func TestPrint(t *testing.T) {
 			want: `(int)|(string)`,
 		},
 		{
+			name: "literal branches in a DSL sum",
+			root: func(a *Tree) NodeID {
+				return a.AddSum(a.AddInt("1", z), a.AddInt("2", z), z)
+			},
+			want: `1|2`,
+		},
+		{
+			name: "tuple branches in a value sum",
+			root: func(a *Tree) NodeID {
+				integer := a.AddSchema(a.AddName("int", z), nil, z)
+				tuple := a.AddSchema(a.AddTuple([]NodeID{integer}, z), nil, z)
+				str := a.AddSchema(a.AddName("string", z), nil, z)
+				empty := a.AddSchema(a.AddTuple(nil, z), nil, z)
+				return a.AddSum(a.AddSum(tuple, str, z), empty, z)
+			},
+			want: `(#{(int)})|(string)|(#{})`,
+		},
+		{
+			name: "tuple branch in a type sum",
+			root: func(a *Tree) NodeID {
+				integer := a.AddSchema(a.AddName("int", z), nil, z)
+				tuple := a.AddTuple([]NodeID{integer}, z)
+				return a.AddSchema(a.AddSum(tuple, a.AddName("string", z), z), nil, z)
+			},
+			want: `(#{(int)}|string)`,
+		},
+		{
 			name: "sum type with literal schema values",
 			root: func(a *Tree) NodeID {
 				return a.AddSum(
@@ -355,6 +384,54 @@ func TestPrint(t *testing.T) {
 			if got := b.String(); got != tc.want {
 				t.Fatalf("got %q, want %q", got, tc.want)
 			}
+		})
+	}
+}
+
+func TestPrintMalformedTypeAndSum(t *testing.T) {
+	t.Parallel()
+	tree := New()
+	z := token.UnknownSpan()
+	name := tree.AddName("int", z)
+	schema := tree.AddSchema(name, nil, z)
+	literal := tree.AddInt("1", z)
+	ident := tree.AddIdent("x", z)
+	attr := tree.AddAttr("optional", 0, false, z, z)
+
+	type testcase struct {
+		name string
+		root NodeID
+		want string
+	}
+	for _, tc := range []testcase{
+		{
+			name: "literal in schema type slot",
+			root: tree.AddSchema(literal, nil, z),
+			want: fmt.Sprintf("ast: invalid schema type Integer at node %d", literal),
+		},
+		{
+			name: "expression in value sum",
+			root: tree.AddSum(schema, ident, z),
+			want: fmt.Sprintf("ast: invalid sum member Ident at node %d", ident),
+		},
+		{
+			name: "attribute in nested type sum",
+			root: tree.AddSchema(tree.AddSum(name, tree.AddSum(attr, name, z), z), nil, z),
+			want: fmt.Sprintf("ast: invalid sum member Attr at node %d", attr),
+		},
+		{
+			name: "missing sum member",
+			root: tree.AddSum(schema, 0, z),
+			want: "ast: invalid sum member Invalid at node 0",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if got := recover(); got != tc.want {
+					t.Errorf("panic = %v, want %q", got, tc.want)
+				}
+			}()
+			_ = Print(io.Discard, tree, tc.root)
 		})
 	}
 }

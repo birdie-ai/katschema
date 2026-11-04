@@ -27,7 +27,7 @@ func TestLexerTokens(t *testing.T) {
 		{src: "]", kind: token.RBrack},
 		{src: "{", kind: token.LBrace},
 		{src: "}", kind: token.RBrace},
-		{src: "#{", kind: token.TupleOpen},
+		{src: "#{", kind: token.LTuple},
 		{src: ",", kind: token.Comma},
 		{src: ":", kind: token.Colon},
 		{src: ".", kind: token.Dot},

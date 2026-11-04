@@ -87,11 +87,17 @@ func FuzzParse(f *testing.F) {
 		`(int, (x > 0 && x < 10) || x == -1)`, `(int, fn(), pkg.fn(x,))`,
 		`(int, +x * -x / 2 % 3 != 0)`, `(int, .fn(.value, pkg.true))`,
 		`(int, x == y == z)`, `(int, x intrue)`, `(int, x /* lookahead */ @)`,
+		`#{}`, `#{(string), #{(int) | (bool)},}`, `(#{(int)}, labels=#{"id"})`,
+		`#{[#{1}]}`, `#{1 /* gap */ true}`, `#{[1}}`,
 	} {
 		f.Add(src)
 	}
 
 	f.Fuzz(func(t *testing.T, src string) {
+		if json.Valid([]byte(src)) {
+			checkJSON(t, src)
+			return
+		}
 		tree, root, err := Parse(src)
 		if err != nil {
 			if tree != nil || root != 0 {

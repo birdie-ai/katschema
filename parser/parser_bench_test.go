@@ -31,6 +31,9 @@ func parseBenchmarkInputs() []testcase {
 		{name: "Constraint/range", src: `(int,-100<=x<=100)`},
 		{name: "Constraint/mixed", src: `{"name":(string,optional,label="Name",1<=len(x)<=100),"value":(string,len(x)>0)|(int,x>0)}`},
 		{name: "Constraint/calls", src: `(int,pkg.check(len(x),other(x+1),ready(),)>0)`},
+		{name: "Tuple/literal_pair", src: `#{"row",42}`},
+		{name: "Tuple/schema_pair", src: `#{(string),(int)}`},
+		{name: "Tuple/refined", src: `(#{(string,len(x)>0),(int|bool)},label="row")`},
 		{name: "Comments/long", src: "/*" + strings.Repeat(" a comment line\n", 8192) + "*/null"},
 		{name: "Comments/many", src: "[" + strings.Repeat("/* item */1,// line\n", 4095) + "/* last */1]"},
 	}
@@ -46,12 +49,17 @@ func parseBenchmarkInputs() []testcase {
 		src.WriteByte('}')
 		inputs = append(inputs, testcase{name: fmt.Sprintf("JSON/wide_%d", size), src: src.String(), json: true})
 		inputs = append(inputs, testcase{name: fmt.Sprintf("JSON/scale_%dx", size/1024), src: "[" + strings.Repeat("1,", size-1) + "1]", json: true})
+		inputs = append(inputs, testcase{name: fmt.Sprintf("Tuple/width_%d", size), src: "#{" + strings.Repeat("1,", size-1) + "1}"})
 	}
 	for _, depth := range []int{16, 64, 256} {
 		inputs = append(inputs, testcase{
 			name: fmt.Sprintf("JSON/depth_%d", depth),
 			src:  strings.Repeat("[", depth) + "null" + strings.Repeat("]", depth),
 			json: true,
+		})
+		inputs = append(inputs, testcase{
+			name: fmt.Sprintf("Tuple/depth_%d", depth),
+			src:  strings.Repeat("#{", depth) + "null" + strings.Repeat("}", depth),
 		})
 	}
 	for _, count := range []int{2, 128, 1024} {

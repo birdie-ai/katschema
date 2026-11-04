@@ -121,7 +121,9 @@ func (p *parser) jsonValue() (ast.NodeID, error) {
 	case token.LBrace:
 		return p.object()
 	case token.LBrack:
-		return p.list()
+		return p.sequence(token.RBrack)
+	case token.LTuple:
+		return p.sequence(token.RBrace)
 	case token.Sub, token.Int, token.Decimal:
 		return p.number()
 	case token.String:
@@ -222,17 +224,17 @@ func (p *parser) object() (ast.NodeID, error) {
 	return p.tree.AddObject(fields, token.Span{Start: open.span.Start, End: close.span.End}), nil
 }
 
-func (p *parser) list() (ast.NodeID, error) {
+func (p *parser) sequence(end token.Kind) (ast.NodeID, error) {
 	if err := p.enter(); err != nil {
 		return 0, err
 	}
 	defer func() { p.depth-- }()
-	open, err := p.expect(token.LBrack)
-	if err != nil {
+	open := p.tok
+	if err := p.next(); err != nil {
 		return 0, err
 	}
 	var elems []ast.NodeID
-	for p.tok.kind != token.RBrack {
+	for p.tok.kind != end {
 		value, err := p.value()
 		if err != nil {
 			return 0, err
@@ -246,11 +248,15 @@ func (p *parser) list() (ast.NodeID, error) {
 			break
 		}
 	}
-	close, err := p.expect(token.RBrack)
+	close, err := p.expect(end)
 	if err != nil {
 		return 0, err
 	}
-	return p.tree.AddList(elems, token.Span{Start: open.span.Start, End: close.span.End}), nil
+	span := token.Span{Start: open.span.Start, End: close.span.End}
+	if open.kind == token.LTuple {
+		return p.tree.AddTuple(elems, span), nil
+	}
+	return p.tree.AddList(elems, span), nil
 }
 
 func (p *parser) schemaSum() (ast.NodeID, error) {
@@ -333,10 +339,8 @@ func (p *parser) typeAtom() (ast.NodeID, error) {
 	switch p.tok.kind {
 	case token.Ident, token.Dot:
 		return p.ref(ast.Name)
-	case token.LBrace:
-		return p.object()
-	case token.LBrack:
-		return p.list()
+	case token.LBrace, token.LBrack, token.LTuple:
+		return p.jsonValue()
 	case token.LParen:
 		return p.schema()
 	default:

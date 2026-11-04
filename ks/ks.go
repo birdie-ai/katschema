@@ -169,6 +169,11 @@ func List(elems ...Value) Value {
 	return Value{kind: valueArray, elems: clone(elems)}
 }
 
+// Tuple describes a fixed sequence of values or schemas, one per position.
+func Tuple(elems ...Value) Value {
+	return Value{kind: valueTuple, elems: clone(elems)}
+}
+
 func Field(name string, value Value) Member {
 	return Member{name: name, value: value}
 }
@@ -178,7 +183,13 @@ func Object(fields ...Member) Value {
 }
 
 func Sum(elems ...Value) Value {
-	return Value{kind: valueSum, elems: clone(elems)}
+	elems = clone(elems)
+	for i, v := range elems {
+		if v.kind == valueTuple {
+			elems[i] = With(v)
+		}
+	}
+	return Value{kind: valueSum, elems: elems}
 }
 
 // With adds clauses to a schema or structural type.
@@ -298,6 +309,7 @@ const (
 	valueObject
 	valueSchema
 	valueSum
+	valueTuple
 )
 
 type refKind uint8
@@ -357,13 +369,16 @@ func emitValue(t *ast.Tree, v Value) (ast.NodeID, error) {
 		return t.AddDecimal(v.text, z), nil
 	case valueString:
 		return t.AddString(v.text, z), nil
-	case valueArray:
+	case valueArray, valueTuple:
 		elems := make([]ast.NodeID, len(v.elems))
 		for i := range v.elems {
 			elems[i], err = emitValue(t, v.elems[i])
 			if err != nil {
 				return 0, err
 			}
+		}
+		if v.kind == valueTuple {
+			return t.AddTuple(elems, z), nil
 		}
 		return t.AddList(elems, z), nil
 	case valueObject:
@@ -442,7 +457,7 @@ func emitRef(t *ast.Tree, r typeRef) (ast.NodeID, error) {
 	case refValue:
 		if r.value != nil {
 			switch r.value.kind {
-			case valueArray, valueObject, valueSum:
+			case valueArray, valueObject, valueSum, valueTuple:
 				return emitValue(t, *r.value)
 			}
 		}

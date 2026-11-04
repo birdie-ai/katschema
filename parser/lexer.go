@@ -130,7 +130,7 @@ func (l *lexer) next() (lexeme, error) {
 			if !l.accept('{') {
 				return lexeme{}, l.errorAt(start, "expected #{")
 			}
-			kind = token.TupleOpen
+			kind = token.LTuple
 		default:
 			return lexeme{}, l.errorAt(start, "unexpected character")
 		}

@@ -623,20 +623,18 @@ But in Katschema, each value can also be a schema type. Example:
 
 ### Tuple
 
-A tuple is very similar to a list but it's a **finite** ordered set of values, each value
-having its own type.
+A tuple has a fixed number of positions, each with its own schema. This
+coordinate schema accepts a JSON array such as `[29.97416777, 31.1339477975]`
+or the explicit tuple `#{29.97416777, 31.1339477975}`.
 
-Example:
-
-Coordinates:
-```json
-#{29.97416777, 31.1339477975}
-```
-
-Coordinate schema:
-```json
+```katschema
 #{(float), (float)}
 ```
+
+`#{(string), (int)}` accepts `["row", 42]` and rejects `[42, "row"]`.
+`#{(int)}` requires exactly one integer. The list schema `[(int)]` accepts
+any number of integers. In Go, use `ks.Tuple(ks.String(), ks.Int())` for the
+two-position schema.
 
 ## Custom types
 

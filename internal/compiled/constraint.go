@@ -332,14 +332,14 @@ func (n *normalizer) inValues(left, right ast.NodeID) ([]TypeID, error) {
 		return nil, n.c.errorf(left, "left side of in must be x")
 	}
 
-	if n.c.t.Node(right).Kind() != ast.List {
+	values, ok := astElements(n.c.t, right)
+	if !ok {
 		return nil, n.c.errorf(
 			right,
-			"right side of in must be a literal array",
+			"right side of in must be a literal array or tuple",
 		)
 	}
 
-	values := n.c.t.List(right)
 	enum := make([]TypeID, 0, len(values))
 
 	for _, v := range values {
@@ -607,6 +607,12 @@ func (n *normalizer) finish() (ct ConstraintID, impossible bool, err error) {
 	}
 
 	kind := n.c.a.baseKind(n.base)
+	if b := n.n.length; b.flags != 0 && n.c.a.Node(n.base).kind == Tuple {
+		if !checkIntBounds(int64(len(n.c.a.tuple(n.base))), b.flags, b.min, b.max) {
+			return 0, true, nil
+		}
+		n.n.length = lenBounds{}
+	}
 	if n.n.enum == nil {
 		switch kind {
 		case Int:

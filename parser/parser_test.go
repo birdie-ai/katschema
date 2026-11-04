@@ -33,6 +33,7 @@ func TestParseBasicSchemas(t *testing.T) {
 		{src: "(.true.false.null.in)", kind: ast.Path},
 		{src: "([])", kind: ast.List},
 		{src: "([1,(int)])", kind: ast.List},
+		{src: "(#{(int)})", kind: ast.Tuple},
 		{src: `({"name":(string)})`, kind: ast.Object},
 	} {
 		t.Run(tc.src, func(t *testing.T) {
@@ -99,6 +100,16 @@ func TestParseErrors(t *testing.T) {
 		{src: "["},
 		{src: "[1"},
 		{src: "[1}"},
+		{src: "# {1}"},
+		{src: "#{"},
+		{src: "#{1]"},
+		{src: "#{,}"},
+		{src: "#{,1}"},
+		{src: "#{1,,}"},
+		{src: "#{1 true}"},
+		{src: "#{1/*separator*/true}"},
+		{src: "#{(int)(string)}"},
+		{src: `#{"key":1}`},
 		{src: "{]"},
 		{src: "}"},
 		{src: `{"a":1 "b":2}`},
@@ -338,45 +349,21 @@ func TestParseClauses(t *testing.T) {
 
 func TestParseSchemaFixtures(t *testing.T) {
 	t.Parallel()
-	type testcase struct {
-		name string
-	}
-	cases := []testcase{
-		{name: "arith.ks"},
-		{name: "complex-logical.ks"},
-		{name: "enum.ks"},
-		{name: "feedback.ks"},
-		{name: "float.ks"},
-		{name: "funcall.ks"},
-		{name: "list.ks"},
-		{name: "marketplace.ks"},
-		{name: "null.ks"},
-		{name: "object.ks"},
-		{name: "string.ks"},
-		{name: "sum.ks"},
-		{name: "tuple.ks"},
-	}
 	paths, err := filepath.Glob("../grammar/examples/*.ks")
-	if err != nil || len(paths) != len(cases) {
-		t.Fatalf("schema fixtures: count = %d, want %d, error = %v", len(paths), len(cases), err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	seen := make(map[string]bool)
-	for _, tc := range cases {
-		if seen[tc.name] {
-			t.Fatalf("fixture %q classified twice", tc.name)
-		}
-		seen[tc.name] = true
-		t.Run(tc.name, func(t *testing.T) {
-			src, err := os.ReadFile(filepath.Join("../grammar/examples", tc.name))
+	if len(paths) == 0 {
+		t.Fatal("no schema fixtures found")
+	}
+	for _, path := range paths {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			src, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tc.name != "object.ks" && tc.name != "tuple.ks" {
-				tree, root := parseOK(t, string(src))
-				checkParsePrint(t, tree, root)
-			} else {
-				parseFailure(t, string(src))
-			}
+			tree, root := parseOK(t, string(src))
+			checkParsePrint(t, tree, root)
 		})
 	}
 }
@@ -428,19 +415,13 @@ func printString(t testing.TB, tree *ast.Tree, root ast.NodeID) string {
 	return b.String()
 }
 
-func checkParsePrint(t testing.TB, tree *ast.Tree, root ast.NodeID) {
+func checkParsePrint(t testing.TB, tree *ast.Tree, root ast.NodeID) string {
 	t.Helper()
 
-	var want bytes.Buffer
-	if err := ast.Print(&want, tree, root); err != nil {
-		t.Fatal(err)
-	}
-	got, gotRoot := parseOK(t, want.String())
-	var printed bytes.Buffer
-	if err := ast.Print(&printed, got, gotRoot); err != nil {
-		t.Fatal(err)
-	}
-	if diff := cmp.Diff(want.String(), printed.String()); diff != "" {
+	want := printString(t, tree, root)
+	got, gotRoot := parseOK(t, want)
+	if diff := cmp.Diff(want, printString(t, got, gotRoot)); diff != "" {
 		t.Fatalf("printed text changed after parsing (-want +got):\n%s", diff)
 	}
+	return want
 }

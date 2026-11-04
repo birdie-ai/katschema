@@ -136,6 +136,7 @@ const (
 	Unary
 	Binary
 	Group
+	Tuple
 )
 
 func (n Node) Kind() Kind { return n.kind }
@@ -307,15 +308,31 @@ func (t *Tree) String(id NodeID) string {
 }
 
 func (t *Tree) AddList(elems []NodeID, span token.Span) NodeID {
+	return t.addArray(List, elems, span)
+}
+
+func (t *Tree) AddTuple(elems []NodeID, span token.Span) NodeID {
+	return t.addArray(Tuple, elems, span)
+}
+
+func (t *Tree) addArray(kind Kind, elems []NodeID, span token.Span) NodeID {
 	r := t.appendRefs(elems)
 	i := uint32(len(t.arrays))
 	t.arrays = append(t.arrays, r)
-	return t.addNode(List, span, i)
+	return t.addNode(kind, span, i)
 }
 
 func (t *Tree) List(id NodeID) []NodeID {
+	return t.array(id, List)
+}
+
+func (t *Tree) Tuple(id NodeID) []NodeID {
+	return t.array(id, Tuple)
+}
+
+func (t *Tree) array(id NodeID, kind Kind) []NodeID {
 	n := t.Node(id)
-	if n.kind != List || int(n.data) >= len(t.arrays) {
+	if n.kind != kind || int(n.data) >= len(t.arrays) {
 		return nil
 	}
 	return refs(t.refs, t.arrays[n.data])
@@ -393,6 +410,7 @@ func (t *Tree) Schema(id NodeID) SchemaData {
 	return SchemaData{Type: d.typ, Clauses: refs(t.refs, d.clauses)}
 }
 
+// AddSum joins two syntax nodes with |. Use AddSchema for a parenthesized branch.
 func (t *Tree) AddSum(left, right NodeID, span token.Span) NodeID {
 	i := uint32(len(t.sums))
 	t.sums = append(t.sums, SumData{Left: left, Right: right})
@@ -523,6 +541,8 @@ func (k Kind) String() string {
 		return "String"
 	case List:
 		return "List"
+	case Tuple:
+		return "Tuple"
 	case Object:
 		return "Object"
 	case Schema:
@@ -553,7 +573,7 @@ func (k Kind) String() string {
 
 func (k Kind) IsValue() bool {
 	switch k {
-	case Null, Bool, Int, Decimal, String, List, Object, Schema:
+	case Null, Bool, Int, Decimal, String, List, Tuple, Object, Schema:
 		return true
 	}
 	return false
@@ -561,7 +581,7 @@ func (k Kind) IsValue() bool {
 
 func (k Kind) IsTypeRef() bool {
 	switch k {
-	case Name, Path, List, Object:
+	case Name, Path, List, Tuple, Object:
 		return true
 	}
 	return false
@@ -573,7 +593,7 @@ func (k Kind) IsClause() bool {
 
 func (k Kind) IsExpr() bool {
 	switch k {
-	case Null, Bool, Int, Decimal, String, List, Object,
+	case Null, Bool, Int, Decimal, String, List, Tuple, Object,
 		Ident, Path, Call, Unary, Binary, Group:
 		return true
 	}

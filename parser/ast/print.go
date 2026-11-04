@@ -49,13 +49,13 @@ func (p *printer) node(id NodeID) {
 
 	case List:
 		p.write("[")
-		for i, v := range p.t.List(id) {
-			if i != 0 {
-				p.write(",")
-			}
-			p.node(v)
-		}
+		p.elements(p.t.List(id))
 		p.write("]")
+
+	case Tuple:
+		p.write("#{")
+		p.elements(p.t.Tuple(id))
+		p.write("}")
 
 	case Object:
 		p.write("{")
@@ -71,6 +71,9 @@ func (p *printer) node(id NodeID) {
 
 	case Schema:
 		s := p.t.Schema(id)
+		if k := p.t.Node(s.Type).Kind(); k != Sum && !k.IsTypeRef() {
+			panic(fmt.Sprintf("ast: invalid schema type %s at node %d", k, s.Type))
+		}
 		p.write("(")
 		p.node(s.Type)
 		for _, c := range s.Clauses {
@@ -81,9 +84,9 @@ func (p *printer) node(id NodeID) {
 
 	case Sum:
 		s := p.t.Sum(id)
-		p.node(s.Left)
+		p.sumMember(s.Left)
 		p.write("|")
-		p.node(s.Right)
+		p.sumMember(s.Right)
 	case Name:
 		p.write(p.t.Name(id))
 
@@ -119,12 +122,7 @@ func (p *printer) node(id NodeID) {
 		c := p.t.Fncall(id)
 		p.write(p.t.Text(c.Func))
 		p.write("(")
-		for i, a := range c.Args {
-			if i != 0 {
-				p.write(",")
-			}
-			p.node(a)
-		}
+		p.elements(c.Args)
 		p.write(")")
 
 	case Unary, Binary:
@@ -137,6 +135,25 @@ func (p *printer) node(id NodeID) {
 
 	default:
 		p.failf("invalid node %d", id)
+	}
+}
+
+func (p *printer) sumMember(id NodeID) {
+	if p.err != nil {
+		return
+	}
+	if k := p.t.Node(id).Kind(); k != Sum && !k.IsValue() && !k.IsTypeRef() {
+		panic(fmt.Sprintf("ast: invalid sum member %s at node %d", k, id))
+	}
+	p.node(id)
+}
+
+func (p *printer) elements(elems []NodeID) {
+	for i, v := range elems {
+		if i != 0 {
+			p.write(",")
+		}
+		p.node(v)
 	}
 }
 

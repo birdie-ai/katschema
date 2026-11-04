@@ -60,6 +60,7 @@ func TestParseExpressions(t *testing.T) {
 	}
 	for _, tc := range []testcase{
 		{src: "(int, (x > 0 && x < 10) || x == -1)", want: "(int,(x>0&&x<10)||x==-1)"},
+		{src: "(int, x in #{1})", want: "(int,x in #{1})"},
 		{src: "(int, !(x > 0), +x, -x, -(x + 1))", want: "(int,!(x>0),+x,-x,-(x+1))"},
 		{src: "(int, x > - 1, x > -/*bound*/1.50e+2)", want: "(int,x>-1,x>-1.50e+2)"},
 		{src: "(int, --1, +1, x - -1)", want: "(int,-(-1),+1,x--1)"},
@@ -100,7 +101,6 @@ func TestParseExpressionErrors(t *testing.T) {
 		{src: "(int, label=1+2)"}, {src: "(int, label=(1))"}, {src: "(int, label=- 1)"},
 		{src: "(int, x == y == z)"}, {src: "(int, x != y in [1])"},
 		{src: `(string, x ~ "a" ~ "b")`}, {src: "(int, x == y < z != q)"},
-		{src: "(int, x in #{1})"},
 	} {
 		t.Run(tc.src, func(t *testing.T) { parseFailure(t, tc.src) })
 	}

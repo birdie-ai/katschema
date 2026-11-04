@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestParseJSON(t *testing.T) {
@@ -93,5 +95,26 @@ func checkJSON(t testing.TB, src string) {
 		t.Fatalf("JSON rejected fixture %q", src)
 	}
 	tree, root := parseOK(t, src)
-	checkParsePrint(t, tree, root)
+	printed := checkParsePrint(t, tree, root)
+	if !json.Valid([]byte(printed)) {
+		t.Fatalf("printed invalid JSON: %s", printed)
+	}
+	if diff := cmp.Diff(canonicalJSON(t, src), canonicalJSON(t, printed)); diff != "" {
+		t.Fatalf("JSON value changed after printing (-want +got):\n%s", diff)
+	}
+}
+
+func canonicalJSON(t testing.TB, src string) string {
+	t.Helper()
+	d := json.NewDecoder(strings.NewReader(src))
+	d.UseNumber()
+	var value any
+	if err := d.Decode(&value); err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

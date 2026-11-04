@@ -72,7 +72,7 @@ func (p *parser) primary() (ast.NodeID, error) {
 		return p.ref(ast.Ident)
 	case token.LParen:
 		return p.group()
-	case token.Null, token.True, token.False, token.Int, token.Decimal, token.String, token.LBrace, token.LBrack:
+	case token.Null, token.True, token.False, token.Int, token.Decimal, token.String, token.LBrace, token.LBrack, token.LTuple:
 		return p.jsonValue()
 	default:
 		return 0, p.expected("expression")
