@@ -39,6 +39,42 @@ func TestCompile(t *testing.T) {
 	}
 }
 
+func TestFieldFingerprint(t *testing.T) {
+	t.Parallel()
+
+	field := func(name string, value ks.Value) katschema.Field {
+		t.Helper()
+		return compile(t, katschema.NewCompiler(), Object(Field(name, value))).Fields()[0]
+	}
+	required := field("id", String())
+	optional := field("id", Optional(String()))
+	if required.Type.Fingerprint() != optional.Type.Fingerprint() {
+		t.Fatal("optionality changed the value type fingerprint")
+	}
+	if required.Fingerprint() == optional.Fingerprint() {
+		t.Fatal("required and optional fields have the same fingerprint")
+	}
+	if required.Fingerprint() == field("alias", String()).Fingerprint() {
+		t.Fatal("field name did not affect the fingerprint")
+	}
+	if required.Fingerprint() == field("id", Int()).Fingerprint() {
+		t.Fatal("value type did not affect the field fingerprint")
+	}
+
+	annotated := field("id", With(String(), Flag("pk")))
+	withoutMetadata := katschema.Field{Name: annotated.Name, Type: annotated.Type}
+	if annotated.Fingerprint() == withoutMetadata.Fingerprint() {
+		t.Fatal("field metadata did not affect the fingerprint")
+	}
+	other := compile(t, katschema.NewCompiler(), Object(
+		Field("extra", LitString("padding")),
+		Field("id", With(String(), Flag("pk"))),
+	))
+	if same, ok := other.Field("id"); !ok || same.Fingerprint() != annotated.Fingerprint() {
+		t.Fatal("identical fields from different compilers should have the same fingerprint")
+	}
+}
+
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
